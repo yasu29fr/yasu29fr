@@ -1,23 +1,22 @@
-name: Threads 予約投稿
+name: Threads 日次投稿
 
-# 予約時刻 (scheduled_at) が来た投稿を拾って公開する。
-# 15 分おきに確認するので、予約は 15 分程度の粒度で効く。
-# 予約なしの投稿はここでは扱わない（Threads 日次投稿 が 1 日 1 件ずつ消化する）。
+# 予約なしの投稿を、毎日 1 件ずつ上から消化する。
+# 「書き溜めておいて毎日流す」用。日時を指定したい投稿は 予約投稿 側で扱う。
 on:
+  # UTC で書く。0 0 * * * = 日本時間 毎日 9:00
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       limit:
         description: "この実行で投稿する件数"
         required: false
-        default: "5"
+        default: "1"
       dry_run:
         description: "true なら API を呼ばず内容だけ表示する"
         required: false
         default: "false"
 
-# 日次投稿と同時に走ると二重投稿になりうるので直列化する
 concurrency:
   group: threads-post
   cancel-in-progress: false
@@ -41,12 +40,12 @@ jobs:
       - name: キューの形式を検証する
         run: python -m threads_bot validate
 
-      - name: 予約時刻が来た投稿を公開する
+      - name: 投稿する
         env:
           THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
         run: |
-          args="post --scheduled-only --limit ${LIMIT:-5}"
+          args="post --limit ${LIMIT:-1}"
           if [ "${DRY_RUN}" = "true" ]; then
             args="$args --dry-run"
           fi

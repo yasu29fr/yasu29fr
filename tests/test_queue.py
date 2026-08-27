@@ -132,6 +132,16 @@ class SelectDueTest(unittest.TestCase):
         self.assertEqual(len(select_due(self.items, set(), now=self.now, limit=1)), 1)
         self.assertEqual(select_due(self.items, set(), now=self.now, limit=0), [])
 
+    def test_scheduled_only_skips_unscheduled_items(self):
+        due = select_due(self.items, set(), now=self.now, limit=10, scheduled_only=True)
+        self.assertEqual([i.id for i in due], ["past"])
+
+    def test_scheduled_only_returns_empty_when_none_are_due(self):
+        due = select_due(
+            self.items, {"past"}, now=self.now, limit=10, scheduled_only=True
+        )
+        self.assertEqual(due, [])
+
     def test_nothing_left_returns_empty(self):
         all_ids = {i.id for i in self.items}
         self.assertEqual(select_due(self.items, all_ids, now=self.now, limit=5), [])

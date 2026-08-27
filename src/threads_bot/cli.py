@@ -31,7 +31,13 @@ def cmd_post(args: argparse.Namespace, config: Config) -> int:
     items = load_queue(config.queue_path, timezone=config.timezone)
     state = State.load(config.state_path)
     now = datetime.now(ZoneInfo(config.timezone))
-    due = select_due(items, state.posted_ids, now=now, limit=args.limit)
+    due = select_due(
+        items,
+        state.posted_ids,
+        now=now,
+        limit=args.limit,
+        scheduled_only=args.scheduled_only,
+    )
 
     if not due:
         remaining = len([i for i in items if i.id not in state.posted_ids])
@@ -110,6 +116,11 @@ def build_parser() -> argparse.ArgumentParser:
     post = sub.add_parser("post", help="キューから投稿する")
     post.add_argument("--limit", type=int, default=1, help="1 回の実行で投稿する件数（既定 1）")
     post.add_argument("--dry-run", action="store_true", help="API を呼ばずに内容だけ表示する")
+    post.add_argument(
+        "--scheduled-only",
+        action="store_true",
+        help="予約時刻 (scheduled_at) がある項目だけを投稿する",
+    )
     post.set_defaults(func=cmd_post)
 
     validate = sub.add_parser("validate", help="キューの形式を検証する")

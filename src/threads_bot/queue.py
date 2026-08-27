@@ -134,17 +134,23 @@ def select_due(
     *,
     now: datetime,
     limit: int = 1,
+    scheduled_only: bool = False,
 ) -> list[QueueItem]:
     """今回のランで投稿すべき項目を返す。
 
     - 投稿済みの id は除外
     - scheduled_at が未来のものは除外
     - 予約時刻ありを時刻順に優先し、残りをファイルの並び順で埋める
+
+    scheduled_only=True のときは予約時刻ありのものだけを対象にする。数分おきに
+    走らせるランで、予約なしの項目まで一気に消化してしまうのを防ぐための指定。
     """
     pending = [item for item in items if item.id not in posted_ids]
     scheduled = sorted(
         (i for i in pending if i.scheduled_at is not None and i.scheduled_at <= now),
         key=lambda i: (i.scheduled_at, i.line_number),
     )
+    if scheduled_only:
+        return scheduled[: max(limit, 0)]
     unscheduled = [i for i in pending if i.scheduled_at is None]
     return (scheduled + unscheduled)[: max(limit, 0)]
