@@ -9,6 +9,7 @@
 #   link_attachment (任意) テキスト投稿に付けるリンク
 #   reply_control   (任意) everyone / accounts_you_follow / mentioned_only
 #   thread          (任意) 連投。1 件目への返信として順に投稿される
-{"id": "hello-001", "text": "自動投稿のテスト。ここから運用を始めます。"}
-{"id": "tips-001", "text": "GitHub Actions の cron は UTC です。日本時間 9:00 に流したいなら 0 0 * * * と書きます。", "thread": ["ちなみに cron の実行は数分ずれることがあります。時報のような使い方には向きません。"]}
-{"id": "scheduled-001", "text": "これは予約投稿の例です。指定時刻を過ぎた最初の実行で投稿されます。", "scheduled_at": "2026-09-01T09:00"}
+#
+# 投稿したい内容を、この下に 1 行 1 投稿の JSON で書き足してください。
+# 例: {"text": "はじめての投稿。"}
+# いまは投稿が 0 件なので、実行しても何も投稿されません。

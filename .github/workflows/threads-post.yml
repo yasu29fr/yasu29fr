@@ -1,8 +1,8 @@
 name: Threads 自動投稿
 
 on:
+  # UTC で書く。0 0 * * * = 日本時間 毎日 9:00
   schedule:
-    # UTC で書く。0 0 * * * = 日本時間 毎日 9:00
     - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
@@ -12,9 +12,8 @@ on:
         default: "1"
       dry_run:
         description: "true なら API を呼ばず内容だけ表示する"
-        type: boolean
         required: false
-        default: false
+        default: "false"
 
 # 前の実行が終わる前に次が走ると二重投稿になりうるので直列化する
 concurrency:
@@ -25,7 +24,12 @@ jobs:
   post:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 投稿済み記録 (state/posted.json) をコミットして戻すため
+      # 投稿済み記録 (state/posted.json) をコミットして戻すため
+      contents: write
+    env:
+      PYTHONPATH: src
+      DRY_RUN: ${{ github.event.inputs.dry_run }}
+      LIMIT: ${{ github.event.inputs.limit }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,22 +39,24 @@ jobs:
 
       - name: キューの形式を検証する
         run: python -m threads_bot validate
-        env:
-          PYTHONPATH: src
 
       - name: 投稿する
         env:
-          PYTHONPATH: src
           THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
         run: |
-          python -m threads_bot post \
-            --limit "${{ inputs.limit || 1 }}" \
-            ${{ inputs.dry_run == true && '--dry-run' || '' }}
+          args="post --limit ${LIMIT:-1}"
+          if [ "${DRY_RUN}" = "true" ]; then
+            args="$args --dry-run"
+          fi
+          python -m threads_bot $args
 
       - name: 投稿済み記録をコミットする
-        if: ${{ inputs.dry_run != true }}
         run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "dry-run のためコミットしません。"
+            exit 0
+          fi
           if git diff --quiet -- state/posted.json; then
             echo "記録に変更なし。コミットはしません。"
             exit 0
@@ -60,8 +66,11 @@ jobs:
           git add state/posted.json
           git commit -m "chore: 投稿済み記録を更新"
           for attempt in 1 2 3 4; do
-            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
-            echo "push に失敗。$((2 ** attempt)) 秒待って再試行します。"
-            sleep $((2 ** attempt))
+            if git pull --rebase origin "${GITHUB_REF_NAME}" && git push; then
+              exit 0
+            fi
+            wait=$((2 ** attempt))
+            echo "push に失敗。${wait} 秒待って再試行します。"
+            sleep "${wait}"
           done
           exit 1
