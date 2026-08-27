@@ -18,8 +18,14 @@ class CliPostTest(unittest.TestCase):
         self.queue_path.write_text(
             "\n".join(
                 [
-                    json.dumps({"id": "a", "text": "1件目"}, ensure_ascii=False),
-                    json.dumps({"id": "b", "text": "2件目"}, ensure_ascii=False),
+                    json.dumps(
+                        {"id": "a", "text": "1件目", "scheduled_at": "2020-01-01T09:00"},
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(
+                        {"id": "b", "text": "2件目", "scheduled_at": "2020-01-02T09:00"},
+                        ensure_ascii=False,
+                    ),
                 ]
             )
             + "\n",
@@ -92,6 +98,23 @@ class CliPostTest(unittest.TestCase):
             "THREADS_STATE_PATH": str(self.state_path),
         }
         with mock.patch.dict("os.environ", env, clear=True):
+            self.assertEqual(cli.main(["validate"]), 0)
+
+    def test_validate_rejects_a_pending_item_without_a_schedule(self):
+        self.queue_path.write_text(
+            json.dumps({"id": "c", "text": "日時なし"}, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        with mock.patch.dict("os.environ", self.env, clear=True):
+            self.assertEqual(cli.main(["validate"]), 1)
+
+    def test_validate_allows_a_posted_item_without_a_schedule(self):
+        self.queue_path.write_text(
+            json.dumps({"id": "c", "text": "投稿済み"}, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        State(path=self.state_path, posted={"c": {}}).save()
+        with mock.patch.dict("os.environ", self.env, clear=True):
             self.assertEqual(cli.main(["validate"]), 0)
 
     def test_validate_reports_a_broken_queue(self):

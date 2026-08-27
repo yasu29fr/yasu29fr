@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from .client import ThreadsAPIError, ThreadsClient, refresh_long_lived_token
 from .config import Config, ConfigError
 from .poster import publish_item
-from .queue import QueueError, QueueItem, load_queue, select_due
+from .queue import QueueError, QueueItem, load_queue, select_due, without_schedule
 from .state import State
 
 logger = logging.getLogger("threads_bot")
@@ -31,17 +31,11 @@ def cmd_post(args: argparse.Namespace, config: Config) -> int:
     items = load_queue(config.queue_path, timezone=config.timezone)
     state = State.load(config.state_path)
     now = datetime.now(ZoneInfo(config.timezone))
-    due = select_due(
-        items,
-        state.posted_ids,
-        now=now,
-        limit=args.limit,
-        scheduled_only=args.scheduled_only,
-    )
+    due = select_due(items, state.posted_ids, now=now, limit=args.limit)
 
     if not due:
         remaining = len([i for i in items if i.id not in state.posted_ids])
-        logger.info("いま投稿すべき項目はありません（未投稿の残り %d 件）", remaining)
+        logger.info("予約時刻が来た項目はありません（未投稿の残り %d 件）", remaining)
         return 0
 
     failures = 0
@@ -65,6 +59,17 @@ def cmd_validate(args: argparse.Namespace, config: Config) -> int:
     items = load_queue(config.queue_path, timezone=config.timezone)
     state = State.load(config.state_path)
     pending = [i for i in items if i.id not in state.posted_ids]
+
+    stranded = without_schedule(items, state.posted_ids)
+    if stranded:
+        for item in stranded:
+            logger.error(
+                "%d 行目 [%s]: scheduled_at がありません。このままでは投稿されません。",
+                item.line_number,
+                item.id,
+            )
+        return 1
+
     logger.info(
         "キュー %s: 全 %d 件 / 未投稿 %d 件 — 形式に問題はありません",
         config.queue_path,
@@ -77,7 +82,7 @@ def cmd_validate(args: argparse.Namespace, config: Config) -> int:
 
 
 def _describe(item: QueueItem) -> str:
-    when = item.scheduled_at.isoformat() if item.scheduled_at else "予約なし"
+    when = item.scheduled_at.isoformat() if item.scheduled_at else "日時なし"
     head = item.text.replace("\n", " ")[:40]
     return f"[{item.id}] {when} {item.media_type} {head!r}"
 
@@ -116,11 +121,6 @@ def build_parser() -> argparse.ArgumentParser:
     post = sub.add_parser("post", help="キューから投稿する")
     post.add_argument("--limit", type=int, default=1, help="1 回の実行で投稿する件数（既定 1）")
     post.add_argument("--dry-run", action="store_true", help="API を呼ばずに内容だけ表示する")
-    post.add_argument(
-        "--scheduled-only",
-        action="store_true",
-        help="予約時刻 (scheduled_at) がある項目だけを投稿する",
-    )
     post.set_defaults(func=cmd_post)
 
     validate = sub.add_parser("validate", help="キューの形式を検証する")

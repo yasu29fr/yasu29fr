@@ -1,8 +1,8 @@
 name: Threads 予約投稿
 
 # 予約時刻 (scheduled_at) が来た投稿を拾って公開する。
-# 15 分おきに確認するので、予約は 15 分程度の粒度で効く。
-# 予約なしの投稿はここでは扱わない（Threads 日次投稿 が 1 日 1 件ずつ消化する）。
+# 予約時刻が来たものしか出ないので、何度叩かれても投稿は増えない。
+# 起動の間隔を短くするほど、指定した時刻に近づく。
 on:
   # 外部の cron から叩く入口。GitHub の schedule は遅延・スキップがあるため、
   # 予約投稿の起動はこちらを本線にしている。
@@ -22,7 +22,7 @@ on:
         required: false
         default: "false"
 
-# 日次投稿と同時に走ると二重投稿になりうるので直列化する
+# 起動が重なっても二重投稿にならないよう直列化する
 concurrency:
   group: threads-post
   cancel-in-progress: false
@@ -51,7 +51,7 @@ jobs:
           THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
         run: |
-          args="post --scheduled-only --limit ${LIMIT:-5}"
+          args="post --limit ${LIMIT:-5}"
           if [ "${DRY_RUN}" = "true" ]; then
             args="$args --dry-run"
           fi

@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from zoneinfo import ZoneInfo
 
-from threads_bot.queue import QueueError, load_queue, select_due
+from threads_bot.queue import QueueError, load_queue, select_due, without_schedule
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -116,32 +116,42 @@ class SelectDueTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_due_scheduled_items_come_first(self):
-        due = select_due(self.items, set(), now=self.now, limit=2)
-        self.assertEqual([i.id for i in due], ["past", "plain-1"])
+    def test_only_due_scheduled_items_are_selected(self):
+        due = select_due(self.items, set(), now=self.now, limit=10)
+        self.assertEqual([i.id for i in due], ["past"])
 
     def test_future_items_are_not_selected(self):
         due = select_due(self.items, set(), now=self.now, limit=10)
         self.assertNotIn("future", [i.id for i in due])
 
+    def test_items_without_a_schedule_are_never_selected(self):
+        due = select_due(self.items, set(), now=self.now, limit=10)
+        self.assertNotIn("plain-1", [i.id for i in due])
+        self.assertNotIn("plain-2", [i.id for i in due])
+
     def test_posted_items_are_skipped(self):
-        due = select_due(self.items, {"past", "plain-1"}, now=self.now, limit=1)
-        self.assertEqual([i.id for i in due], ["plain-2"])
+        due = select_due(self.items, {"past"}, now=self.now, limit=10)
+        self.assertEqual(due, [])
+
+    def test_due_items_come_out_in_time_order(self):
+        earlier = datetime(2026, 5, 1, 9, 0, tzinfo=JST)
+        self.items[1].scheduled_at = earlier  # future -> 過去にずらす
+        due = select_due(self.items, set(), now=self.now, limit=10)
+        self.assertEqual([i.id for i in due], ["past", "future"])
 
     def test_limit_caps_the_result(self):
+        self.items[1].scheduled_at = datetime(2026, 5, 1, 9, 0, tzinfo=JST)
         self.assertEqual(len(select_due(self.items, set(), now=self.now, limit=1)), 1)
         self.assertEqual(select_due(self.items, set(), now=self.now, limit=0), [])
-
-    def test_scheduled_only_skips_unscheduled_items(self):
-        due = select_due(self.items, set(), now=self.now, limit=10, scheduled_only=True)
-        self.assertEqual([i.id for i in due], ["past"])
-
-    def test_scheduled_only_returns_empty_when_none_are_due(self):
-        due = select_due(
-            self.items, {"past"}, now=self.now, limit=10, scheduled_only=True
-        )
-        self.assertEqual(due, [])
 
     def test_nothing_left_returns_empty(self):
         all_ids = {i.id for i in self.items}
         self.assertEqual(select_due(self.items, all_ids, now=self.now, limit=5), [])
+
+    def test_without_schedule_finds_stranded_items(self):
+        stranded = without_schedule(self.items, set())
+        self.assertEqual([i.id for i in stranded], ["plain-1", "plain-2"])
+
+    def test_without_schedule_ignores_posted_items(self):
+        stranded = without_schedule(self.items, {"plain-1", "plain-2"})
+        self.assertEqual(stranded, [])

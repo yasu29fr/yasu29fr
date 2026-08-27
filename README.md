@@ -1,6 +1,6 @@
 # threads-bot — Threads 自動投稿の仕組み
 
-投稿キューをリポジトリに置き、GitHub Actions の cron が時間になったものを Threads へ投稿します。
+投稿キューをリポジトリに置き、予約した時刻が来たものを GitHub Actions が Threads へ投稿します。
 キューはブラウザの画面から編集できます。サーバーは不要、依存ライブラリもゼロ
 （Python 3.11 以上の標準ライブラリのみ）です。
 
@@ -11,9 +11,9 @@
 └──────────────┘               └─────────┬──────────┘
                                           │
                         ┌─────────────────┴─────────────────┐
-                        │ GitHub Actions (cron)             │
-                        │  15 分おき → 予約時刻が来たもの      │
-                        │  毎日 9:00  → 順番待ちを 1 件       │
+                        │ GitHub Actions                    │
+                        │ 外部 cron が数分おきに起動し、       │
+                        │ 予約時刻が来たものを投稿する          │
                         └─────────────────┬─────────────────┘
                                           ▼
                                    Threads Graph API
@@ -69,12 +69,15 @@
 
 ## 2. 投稿のタイミング
 
-| 種類 | いつ投稿されるか | 対応するワークフロー |
-| --- | --- | --- |
-| 日時を指定した投稿 | 指定時刻を過ぎた最初の実行（15 分おきに確認） | `Threads 予約投稿` |
-| 順番待ちの投稿 | 毎日 9:00 に上から 1 件 | `Threads 日次投稿` |
+投稿は**予約した日時が来たときだけ**行われます。外部の cron が定期的にワークフローを
+起動し、そのとき予約時刻を過ぎているものを投稿します。
 
-予約は 15 分程度の粒度で考えてください。分単位の正確さが必要な用途には向きません。
+起動の間隔がそのまま「遅れの上限」になります。5 分おきに起動していれば、
+指定時刻から最大 5 分遅れて投稿されます。予約時刻が来たものしか出ないため、
+**間隔を短くしても投稿が増えることはありません**。
+
+> 予約時刻のない項目は投稿されません。`threads-bot validate` がそうした項目を
+> エラーとして報告します（画面でも赤字で警告します）。
 
 ### 起動は外部の cron から行う
 
@@ -94,12 +97,13 @@
 
 [cron-job.org](https://console.cron-job.org/) などで、次の POST を登録します。
 
+登録するジョブは 1 つだけです。
+
 | ジョブ | 間隔 | `event_type` |
 | --- | --- | --- |
-| 予約投稿の確認 | 15 分おき | `threads-tick` |
-| 順番待ちの消化 | 毎日 9:00 (JST) | `threads-drip` |
+| 予約投稿の確認 | 5〜15 分おき | `threads-tick` |
 
-共通の設定:
+設定:
 
 ```
 URL    : https://api.github.com/repos/yasu29fr/yasu29fr/dispatches
@@ -138,7 +142,6 @@ curl -X POST https://api.github.com/repos/yasu29fr/yasu29fr/dispatches \
 Web アプリを使わず、`posts/queue.jsonl` に 1 行 1 投稿の JSON を書いても同じです。
 
 ```jsonl
-{"text": "今日やったこと。"}
 {"text": "予約投稿。", "scheduled_at": "2026-09-01T09:00"}
 {"text": "画像つき。", "image_url": "https://example.com/photo.jpg", "alt_text": "作業机の写真"}
 {"text": "連投の1件目。", "thread": ["2件目は1件目への返信になります。", "3件目。"]}
@@ -147,8 +150,8 @@ Web アプリを使わず、`posts/queue.jsonl` に 1 行 1 投稿の JSON を�
 | フィールド | 必須 | 説明 |
 | --- | --- | --- |
 | `text` | ○ | 本文。500 文字まで |
+| `scheduled_at` | ○ | 予約日時。`2026-09-01T09:00` 形式。タイムゾーン省略時は Asia/Tokyo |
 | `id` | | 投稿の識別子。省略時は本文から自動生成 |
-| `scheduled_at` | | 予約日時。`2026-09-01T09:00` 形式。タイムゾーン省略時は Asia/Tokyo |
 | `image_url` / `video_url` | | 公開 URL のメディア。どちらか一方のみ |
 | `alt_text` | | メディアの代替テキスト |
 | `link_attachment` | | テキスト投稿に付けるリンク |
@@ -216,8 +219,7 @@ set -a && . ./.env && set +a
 
 PYTHONPATH=src python3 -m threads_bot validate           # キューの形式チェック
 PYTHONPATH=src python3 -m threads_bot post --dry-run     # 投稿せず内容だけ表示
-PYTHONPATH=src python3 -m threads_bot post               # 1 件投稿
-PYTHONPATH=src python3 -m threads_bot post --scheduled-only  # 予約時刻が来たものだけ
+PYTHONPATH=src python3 -m threads_bot post               # 予約時刻が来たものを 1 件投稿
 PYTHONPATH=src python3 -m threads_bot me                 # トークンの持ち主を確認
 PYTHONPATH=src python3 -m threads_bot limit              # 24 時間の投稿枠の残り
 ```
@@ -231,8 +233,8 @@ PYTHONPATH=src python3 -m threads_bot limit              # 24 時間の投稿枠
   なるまで待ってから公開します。
 - **二重投稿の防止** — 投稿するとワークフローが `state/posted.json` を更新してコミットします。
   この記録が唯一の判断材料なので、手で消すと再投稿されます。
-- **同時実行の防止** — 予約投稿と日次投稿は同じ `concurrency: threads-post` に属し、
-  同時には走りません。
+- **同時実行の防止** — `concurrency: threads-post` により、実行が重なりません。
+  起動が短い間隔で重なっても、前の実行が終わるまで次は待ちます。
 - **再試行** — 429 と 5xx、通信エラーは指数バックオフ（2s / 4s / 8s）で 3 回まで再試行します。
   400 番台のリクエストエラーは再試行せず即座に失敗させます。
 - **投稿の上限** — Threads の API 投稿は 1 アカウント 24 時間で 250 件までです
@@ -263,8 +265,7 @@ src/threads_bot/
   cli.py                       コマンドライン
 scripts/commit_state.sh        投稿済み記録のコミット（ワークフロー共通）
 .github/workflows/
-  threads-post.yml             予約投稿（15 分おき）
-  threads-drip.yml             日次投稿（毎日 9:00）
+  threads-post.yml             予約投稿（外部 cron から起動）
   threads-check.yml            接続確認（手動）
   threads-refresh-token.yml    トークンの自動更新
   test.yml                     テスト

@@ -409,8 +409,9 @@
     const scheduled = app.queue.items
       .filter((item) => item.scheduled_at && !isPosted(item))
       .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
-    const queued = app.queue.items.filter((item) => !item.scheduled_at && !isPosted(item));
-    return [...scheduled, ...queued];
+    // 日時のない項目は投稿されない。埋もれないよう末尾に出して注意を促す。
+    const stranded = app.queue.items.filter((item) => !item.scheduled_at && !isPosted(item));
+    return [...scheduled, ...stranded];
   }
 
   const isPosted = (item) => Boolean(item.id && app.posted[item.id]);
@@ -440,8 +441,8 @@
           ? `${formatJst(item.scheduled_at)} — まもなく投稿されます`
           : formatJst(item.scheduled_at);
       } else {
-        when.className = "card-when";
-        when.textContent = "順番待ち（毎日 9:00 に上から 1 件ずつ）";
+        when.className = "card-when due";
+        when.textContent = "日時が未設定 — このままでは投稿されません";
       }
       card.append(when);
 
@@ -563,7 +564,6 @@
     el("count-text").textContent = "0";
     el("count-text").parentElement.classList.remove("over");
     setScheduledInput(defaultScheduledAt());
-    updateWhenVisibility();
   }
 
   function startEdit(item) {
@@ -580,10 +580,9 @@
       el("image-thumb").src = item.image_url;
       el("image-name").textContent = item.image_url;
     }
-    const mode = item.scheduled_at ? "scheduled" : "queue";
-    document.querySelector(`input[name="when"][value="${mode}"]`).checked = true;
-    if (item.scheduled_at) setScheduledInput(new Date(item.scheduled_at));
-    updateWhenVisibility();
+    setScheduledInput(
+      item.scheduled_at ? new Date(item.scheduled_at) : defaultScheduledAt(),
+    );
     updateCounter();
     el("composer-title").textContent = "投稿を編集";
     el("submit").textContent = "保存する";
@@ -644,9 +643,8 @@
       return;
     }
 
-    const mode = document.querySelector('input[name="when"]:checked').value;
     const scheduledAt = readScheduledInput();
-    if (mode === "scheduled" && !scheduledAt) {
+    if (!scheduledAt) {
       banner("投稿日時を選んでください。", "error");
       return;
     }
@@ -657,8 +655,7 @@
         imageUrl = await uploadImage(app.pendingImage.file);
       }
 
-      const item = { id: app.editingId || newId(), text };
-      if (mode === "scheduled") item.scheduled_at = scheduledAt;
+      const item = { id: app.editingId || newId(), text, scheduled_at: scheduledAt };
       const thread = threadInputs().map((input) => input.value.trim()).filter(Boolean);
       if (thread.length) item.thread = thread;
       if (imageUrl) item.image_url = imageUrl;
@@ -678,12 +675,7 @@
       );
       resetComposer();
       render();
-      banner(
-        mode === "scheduled"
-          ? `${formatJst(item.scheduled_at)} に投稿されます。`
-          : "順番待ちに入れました。",
-        "ok",
-      );
+      banner(`${formatJst(item.scheduled_at)} に投稿されます。`, "ok");
       switchTab("queue");
     });
   }
@@ -716,11 +708,6 @@
     for (const panel of document.querySelectorAll(".tabpanel")) {
       panel.hidden = panel.id !== `tab-${name}`;
     }
-  }
-
-  function updateWhenVisibility() {
-    const mode = document.querySelector('input[name="when"]:checked').value;
-    el("when-scheduled").hidden = mode !== "scheduled";
   }
 
   function updateCounter() {
@@ -830,9 +817,6 @@
     for (const tab of document.querySelectorAll(".tab")) {
       tab.addEventListener("click", () => switchTab(tab.dataset.tab));
     }
-    for (const radio of document.querySelectorAll('input[name="when"]')) {
-      radio.addEventListener("change", updateWhenVisibility);
-    }
     for (const chip of document.querySelectorAll("[data-quick]")) {
       chip.addEventListener("click", () => applyQuick(chip.dataset.quick));
     }
@@ -853,7 +837,6 @@
     el("composer").addEventListener("submit", onSubmit);
 
     setScheduledInput(defaultScheduledAt());
-    updateWhenVisibility();
     updateProofreadVisibility();
     connect();
   }

@@ -134,23 +134,31 @@ def select_due(
     *,
     now: datetime,
     limit: int = 1,
-    scheduled_only: bool = False,
 ) -> list[QueueItem]:
-    """今回のランで投稿すべき項目を返す。
+    """今回のランで投稿すべき項目を、予約時刻の早い順に返す。
 
     - 投稿済みの id は除外
-    - scheduled_at が未来のものは除外
-    - 予約時刻ありを時刻順に優先し、残りをファイルの並び順で埋める
+    - scheduled_at が未来のもの、そもそも無いものは除外
 
-    scheduled_only=True のときは予約時刻ありのものだけを対象にする。数分おきに
-    走らせるランで、予約なしの項目まで一気に消化してしまうのを防ぐための指定。
+    予約時刻のない項目は投稿されない。何度叩かれても予約時刻が来たものしか
+    出ないので、起動の間隔を短くしても投稿が増えない。
     """
-    pending = [item for item in items if item.id not in posted_ids]
-    scheduled = sorted(
-        (i for i in pending if i.scheduled_at is not None and i.scheduled_at <= now),
+    return sorted(
+        (
+            item
+            for item in items
+            if item.id not in posted_ids
+            and item.scheduled_at is not None
+            and item.scheduled_at <= now
+        ),
         key=lambda i: (i.scheduled_at, i.line_number),
-    )
-    if scheduled_only:
-        return scheduled[: max(limit, 0)]
-    unscheduled = [i for i in pending if i.scheduled_at is None]
-    return (scheduled + unscheduled)[: max(limit, 0)]
+    )[: max(limit, 0)]
+
+
+def without_schedule(items: list[QueueItem], posted_ids: set[str]) -> list[QueueItem]:
+    """未投稿なのに予約時刻がない項目。このままでは永久に投稿されない。"""
+    return [
+        item
+        for item in items
+        if item.id not in posted_ids and item.scheduled_at is None
+    ]
