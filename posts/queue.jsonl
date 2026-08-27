@@ -12,5 +12,5 @@
 #
 # 投稿したい内容を、この下に 1 行 1 投稿の JSON で書き足してください。
 # 例: {"text": "はじめての投稿。"}
-{"id":"2026-08-27-rain","text":"石川・富山が大雨らしいけど、福井も降ってきましたね。"}
-{"id":"p-202608271111-inhy","text":"ClaudeでThereads投稿アプリできました。","scheduled_at":"2026-08-27T12:00:00+09:00","thread":["連投・予約・履歴も機能してます。"],"image_url":"https://raw.githubusercontent.com/yasu29fr/yasu29fr/refs/heads/claude/threads-auto-posting-uhiy6w/assets/images/202608271111-__________2026-08-27_11.09.29.png"}
+{"id": "2026-08-27-rain", "text": "石川・富山が大雨らしいけど、福井も降ってきましたね。"}
+{"id": "p-202608271111-inhy", "text": "ClaudeでThereads投稿アプリできました。", "scheduled_at": "2026-08-27T12:30:00+09:00", "thread": ["連投・予約・履歴も機能してます。"], "image_url": "https://raw.githubusercontent.com/yasu29fr/yasu29fr/refs/heads/claude/threads-auto-posting-uhiy6w/assets/images/202608271111-__________2026-08-27_11.09.29.png"}
