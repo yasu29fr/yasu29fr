@@ -15,7 +15,13 @@
   const STORE_KEY = "threads-bot.settings";
   const JST = "Asia/Tokyo";
 
-  const el = (id) => document.getElementById(id);
+  function el(id) {
+    const node = document.getElementById(id);
+    // HTML と JS のどちらかだけが古いキャッシュだと、ここで初めて食い違いが出る。
+    // 黙って例外にすると初期化が丸ごと止まるので、原因が分かる形で投げる。
+    if (!node) throw new Error(`画面の要素 #${id} が見つかりません（表示が古い可能性があります）`);
+    return node;
+  }
 
   /** 画面の状態。queue.sha は書き込み時の衝突検出に使う。 */
   const app = {
@@ -181,7 +187,7 @@
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   });
 
   /** Date → "YYYY-MM-DDTHH:MM"（日本時間の壁掛け時計の値） */
@@ -706,5 +712,34 @@
     connect();
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  /** 初期化が失敗しても白紙にせず、何が起きたかを画面に出す。 */
+  function start() {
+    try {
+      init();
+    } catch (error) {
+      const node = document.getElementById("banner");
+      if (node) {
+        node.textContent = `画面の準備に失敗しました: ${error.message}`;
+        node.className = "banner banner-error";
+        node.hidden = false;
+      }
+      throw error;
+    }
+  }
+
+  window.addEventListener("error", (event) => {
+    const node = document.getElementById("banner");
+    if (node && node.hidden) {
+      node.textContent = `エラー: ${event.message}`;
+      node.className = "banner banner-error";
+      node.hidden = false;
+    }
+  });
+
+  // スクリプトは body の末尾にあるため、読み込み済みならそのまま初期化する
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
 })();
