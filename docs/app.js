@@ -439,7 +439,10 @@
       const trimmed = line.trim();
       if (!trimmed) continue;
       if (trimmed.startsWith("#")) {
+        // 先頭のコメントは見出しとして、途中のコメントはその位置のまま残す。
+        // 落とすと、画面から保存しただけで手書きのメモが消えてしまう。
         if (inHeader) header.push(line);
+        else items.push({ __comment: line });
         continue;
       }
       inHeader = false;
@@ -456,7 +459,9 @@
   function serializeQueue() {
     const lines = [...app.queue.header];
     for (const item of app.queue.items) {
-      lines.push(item.__raw !== undefined ? item.__raw : JSON.stringify(item));
+      if (item.__comment !== undefined) lines.push(item.__comment);
+      else if (item.__raw !== undefined) lines.push(item.__raw);
+      else lines.push(JSON.stringify(item));
     }
     return lines.join("\n") + "\n";
   }
@@ -571,12 +576,18 @@
     if (kind === "ok") setTimeout(() => { node.hidden = true; }, 4000);
   }
 
+  /** コメント行は投稿ではない。一覧・件数・保存対象の判定から外す。 */
+  const isPost = (item) => item.__comment === undefined;
+
   function sortedPending() {
     const scheduled = app.queue.items
+      .filter(isPost)
       .filter((item) => item.scheduled_at && !isPosted(item))
       .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
     // 日時のない項目は投稿されない。埋もれないよう末尾に出して注意を促す。
-    const stranded = app.queue.items.filter((item) => !item.scheduled_at && !isPosted(item));
+    const stranded = app.queue.items
+      .filter(isPost)
+      .filter((item) => !item.scheduled_at && !isPosted(item));
     return [...scheduled, ...stranded];
   }
 
@@ -655,7 +666,9 @@
     list.innerHTML = "";
     el("history-empty").hidden = entries.length > 0;
 
-    const byId = new Map(app.queue.items.filter((i) => i.id).map((i) => [i.id, i]));
+    const byId = new Map(
+      app.queue.items.filter((i) => isPost(i) && i.id).map((i) => [i.id, i]),
+    );
     for (const [id, record] of entries) {
       const card = document.createElement("div");
       card.className = "card";
