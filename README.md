@@ -74,8 +74,56 @@
 | 日時を指定した投稿 | 指定時刻を過ぎた最初の実行（15 分おきに確認） | `Threads 予約投稿` |
 | 順番待ちの投稿 | 毎日 9:00 に上から 1 件 | `Threads 日次投稿` |
 
-cron の実行は数分ずれることがあるため、予約は 15 分程度の粒度で考えてください。
-分単位の正確さが必要な用途には向きません。
+予約は 15 分程度の粒度で考えてください。分単位の正確さが必要な用途には向きません。
+
+### 起動は外部の cron から行う
+
+**GitHub Actions の `schedule` は当てになりません。** このリポジトリでは一度も発火しませんでした
+（設定に不備はなく、手動実行は正常）。GitHub 自身も遅延・スキップがあり得ると明記しています。
+
+そのため、外部の無料 cron から GitHub API を叩いてワークフローを起動します。
+ワークフロー側は `repository_dispatch` を受け口として用意済みです（`schedule` も保険として残しています）。
+
+**1. 起動用のトークンを作る**
+
+[Fine-grained token を作成](https://github.com/settings/personal-access-tokens/new)し、
+`yasu29fr/yasu29fr` だけに絞って **Contents: Read and write** を付けます
+（`repository_dispatch` はこの権限で叩けます）。画面用とは別のトークンにしてください。
+
+**2. cron サービスに 2 つのジョブを登録する**
+
+[cron-job.org](https://console.cron-job.org/) などで、次の POST を登録します。
+
+| ジョブ | 間隔 | `event_type` |
+| --- | --- | --- |
+| 予約投稿の確認 | 15 分おき | `threads-tick` |
+| 順番待ちの消化 | 毎日 9:00 (JST) | `threads-drip` |
+
+共通の設定:
+
+```
+URL    : https://api.github.com/repos/yasu29fr/yasu29fr/dispatches
+Method : POST
+Headers: Accept: application/vnd.github+json
+         Authorization: Bearer <上で作ったトークン>
+         X-GitHub-Api-Version: 2022-11-28
+         Content-Type: application/json
+Body   : {"event_type": "threads-tick"}
+```
+
+動作確認は手元からでもできます。
+
+```bash
+curl -X POST https://api.github.com/repos/yasu29fr/yasu29fr/dispatches \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer <トークン>" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  -d '{"event_type": "threads-tick"}'
+```
+
+204 が返り、Actions に `Threads 予約投稿` の実行が現れれば成功です。
+
+> `repository_dispatch` も `schedule` と同じくデフォルトブランチのワークフローが動きます。
 
 時刻を変えたい場合は `.github/workflows/` の cron を編集します。**GitHub Actions の cron は UTC** です。
 
