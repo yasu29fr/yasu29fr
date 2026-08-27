@@ -13,6 +13,9 @@
   const MAX_TEXT = 500;
   const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
   const STORE_KEY = "threads-bot.settings";
+  const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+  const ANTHROPIC_VERSION = "2023-06-01";
+  const PROOFREAD_MODEL = "claude-opus-5";
   const JST = "Asia/Tokyo";
 
   function el(id) {
@@ -25,7 +28,7 @@
 
   /** 画面の状態。queue.sha は書き込み時の衝突検出に使う。 */
   const app = {
-    cfg: { repo: "", branch: "", token: "" },
+    cfg: { repo: "", branch: "", token: "", anthropicKey: "" },
     queue: { header: [], items: [], sha: null },
     posted: {},
     editingId: null,
@@ -55,6 +58,7 @@
       repo: stored.repo || guessRepo(),
       branch: stored.branch || "",
       token: stored.token || "",
+      anthropicKey: stored.anthropicKey || "",
     };
   }
 
@@ -126,6 +130,136 @@
     const binary = atob(base64.replace(/\s/g, ""));
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
     return new TextDecoder().decode(bytes);
+  }
+
+  // ---------------------------------------------------------------- 校正
+
+  const PROOFREAD_SYSTEM = `あなたは日本語の SNS 投稿（Threads）の校正者です。
+投稿者本人の言葉づかいを尊重してください。書き手が別人になったように感じる直しはしません。
+
+見るのは次の 3 点です。
+1. 誤字脱字・変換ミス・表記ゆれ
+2. 読みやすさ・簡潔さ（回りくどい言い回し、削っても意味が通る部分）
+3. 絵文字（内容に合うものを控えめに。多くても 2 つまで。合わないなら足さない）
+
+守ること:
+- 事実を足さない。書かれていないことを補わない
+- 校正後の本文は 500 文字以内
+- 直すところがなければ、本文はそのままにして指摘を空にする
+
+出力は次の形の JSON だけを返してください。前後に説明やコードフェンスを付けないこと。
+{"revised": "校正後の本文", "notes": [{"kind": "誤字|表記|簡潔さ|絵文字", "detail": "何をどう直したか一文で"}]}`;
+
+  /** レスポンスから JSON を取り出す。コードフェンスや前後の文章が付いても拾えるようにする。 */
+  function extractJson(text) {
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const body = fenced ? fenced[1] : text;
+    const start = body.indexOf("{");
+    const end = body.lastIndexOf("}");
+    if (start < 0 || end <= start) throw new Error("校正結果を読み取れませんでした。");
+    return JSON.parse(body.slice(start, end + 1));
+  }
+
+  async function requestProofread(text) {
+    let response;
+    try {
+      response = await fetch(ANTHROPIC_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": app.cfg.anthropicKey,
+          "anthropic-version": ANTHROPIC_VERSION,
+          // ブラウザから直接叩くための許可。これがないと CORS で弾かれる。
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: PROOFREAD_MODEL,
+          max_tokens: 4000,
+          output_config: { effort: "low" },
+          system: PROOFREAD_SYSTEM,
+          messages: [{ role: "user", content: text }],
+        }),
+      });
+    } catch (_) {
+      throw new Error("Claude に接続できませんでした。通信環境を確認してください。");
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = (data.error && data.error.message) || `HTTP ${response.status}`;
+      if (response.status === 401) throw new Error("Anthropic の API キーが無効です。");
+      if (response.status === 429) throw new Error("回数の上限に達しました。少し待ってからお試しください。");
+      throw new Error(`校正に失敗しました: ${message}`);
+    }
+    if (data.stop_reason === "refusal") {
+      throw new Error("この内容の校正は見送られました。");
+    }
+
+    // thinking ブロックが混ざるので text ブロックだけを拾う
+    const body = (data.content || [])
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("");
+    const parsed = extractJson(body);
+    if (typeof parsed.revised !== "string" || !parsed.revised.trim()) {
+      throw new Error("校正結果が空でした。");
+    }
+    return { revised: parsed.revised, notes: Array.isArray(parsed.notes) ? parsed.notes : [] };
+  }
+
+  async function onProofread() {
+    const text = el("f-text").value.trim();
+    if (!text) {
+      banner("先に本文を書いてください。", "error");
+      return;
+    }
+    const button = el("proofread");
+    const status = el("proofread-status");
+    button.disabled = true;
+    status.textContent = "Claude が読んでいます…";
+    el("proofread-result").hidden = true;
+    try {
+      const result = await requestProofread(text);
+      renderProofread(result, text);
+      status.textContent = "";
+    } catch (error) {
+      status.textContent = "";
+      banner(error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function renderProofread(result, original) {
+    el("proofread-text").textContent = result.revised;
+    const list = el("proofread-notes");
+    list.innerHTML = "";
+    if (result.revised === original && result.notes.length === 0) {
+      const item = document.createElement("li");
+      item.textContent = "直すところは見つかりませんでした。";
+      list.append(item);
+    }
+    for (const note of result.notes) {
+      const item = document.createElement("li");
+      const kind = document.createElement("span");
+      kind.className = "kind";
+      kind.textContent = `${note.kind || "指摘"}: `;
+      item.append(kind, document.createTextNode(note.detail || ""));
+      list.append(item);
+    }
+    el("proofread-result").hidden = false;
+  }
+
+  function applyProofread() {
+    el("f-text").value = el("proofread-text").textContent;
+    updateCounter();
+    el("proofread-result").hidden = true;
+  }
+
+  /** キーが登録されているときだけ校正ボタンを出す。 */
+  function updateProofreadVisibility() {
+    el("proofread-bar").hidden = !app.cfg.anthropicKey;
+    if (!app.cfg.anthropicKey) el("proofread-result").hidden = true;
   }
 
   // -------------------------------------------------------------- キュー
@@ -422,6 +556,7 @@
     el("composer").reset();
     el("thread-parts").innerHTML = "";
     el("image-preview").hidden = true;
+    el("proofread-result").hidden = true;
     el("composer-title").textContent = "新しい投稿";
     el("submit").textContent = "キューに入れる";
     el("cancel-edit").hidden = true;
@@ -627,6 +762,7 @@
     el("cfg-repo").value = app.cfg.repo;
     el("cfg-branch").value = app.cfg.branch;
     el("cfg-token").value = app.cfg.token;
+    el("cfg-anthropic").value = app.cfg.anthropicKey;
     if (app.cfg.repo) {
       el("pat-link").href = "https://github.com/settings/personal-access-tokens/new";
     }
@@ -674,17 +810,21 @@
         repo: el("cfg-repo").value.trim(),
         branch: el("cfg-branch").value.trim(),
         token: el("cfg-token").value.trim(),
+        anthropicKey: el("cfg-anthropic").value.trim(),
       };
       saveSettings();
+      updateProofreadVisibility();
       await connect();
       fillSettingsForm();
     });
     el("clear-settings").addEventListener("click", () => {
       app.cfg.token = "";
+      app.cfg.anthropicKey = "";
       saveSettings();
       fillSettingsForm();
+      updateProofreadVisibility();
       connect();
-      banner("トークンをこのブラウザから消しました。", "ok");
+      banner("トークンとキーをこのブラウザから消しました。", "ok");
     });
 
     for (const tab of document.querySelectorAll(".tab")) {
@@ -704,11 +844,17 @@
       el("f-image").value = "";
       el("image-preview").hidden = true;
     });
+    el("proofread").addEventListener("click", onProofread);
+    el("apply-proofread").addEventListener("click", applyProofread);
+    el("dismiss-proofread").addEventListener("click", () => {
+      el("proofread-result").hidden = true;
+    });
     el("cancel-edit").addEventListener("click", resetComposer);
     el("composer").addEventListener("submit", onSubmit);
 
     setScheduledInput(defaultScheduledAt());
     updateWhenVisibility();
+    updateProofreadVisibility();
     connect();
   }
 

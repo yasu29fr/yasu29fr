@@ -211,3 +211,25 @@ fieldset.when legend { padding: 0 0.35rem; font-size: 0.85rem; color: var(--fg-m
 .empty { color: var(--fg-muted); text-align: center; padding: 2rem 0; }
 
 a { color: var(--accent); }
+
+/* 校正 */
+.proofread-bar { margin-bottom: 0.9rem; }
+
+.proofread {
+  margin: 0 0 0.9rem;
+  padding: 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.proofread .card-text { margin-bottom: 0.5rem; }
+
+.notes {
+  margin: 0 0 0.7rem;
+  padding-left: 1.1rem;
+  font-size: 0.84rem;
+  color: var(--fg-muted);
+}
+.notes li { margin-bottom: 0.2rem; }
+.notes .kind { color: var(--fg); }
