@@ -203,21 +203,50 @@
   }
 
   /** 初期値は「現在時刻の 1 時間後」。 */
-  const defaultScheduledAt = () =>
-    roundUpToStep(new Date(Date.now() + 60 * 60000));
+  const defaultScheduledAt = () => roundUpToStep(new Date(Date.now() + 60 * 60000));
 
   /**
-   * 入力欄に日時を入れる。
+   * 時刻のプルダウンを 10 分刻みで組み直す。
    *
-   * 手書きの JSONL などで 10 分刻みでない予約もありうる。そのまま入れると
-   * ブラウザの入力チェックに引っかかって保存できなくなるので、その回だけ
-   * 刻みを 1 分に緩めて元の時刻を保つ。
+   * datetime-local の step 属性はスマホの日時ピッカーで無視されるため、
+   * 時刻だけ独立した select にして刻みを確実にしている。手書きの JSONL に
+   * 10 分刻みでない予約があった場合は、その値だけ選択肢に足して元の時刻を保つ。
    */
+  function buildTimeOptions(selected) {
+    const values = [];
+    for (let minutes = 0; minutes < 24 * 60; minutes += STEP_MINUTES) {
+      values.push(
+        `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+      );
+    }
+    if (selected && !values.includes(selected)) {
+      values.push(selected);
+      values.sort();
+    }
+    const select = el("f-time");
+    select.innerHTML = "";
+    for (const value of values) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      select.append(option);
+    }
+    if (selected) select.value = selected;
+  }
+
+  /** 入力欄（日付 + 時刻）に日時を入れる。 */
   function setScheduledInput(date) {
-    const input = el("f-scheduled");
-    const aligned = date.getMinutes() % STEP_MINUTES === 0 && date.getSeconds() === 0;
-    input.step = aligned ? String(STEP_MINUTES * 60) : "60";
-    input.value = toJstInputValue(date);
+    const [day, time] = toJstInputValue(date).split("T");
+    el("f-date").value = day;
+    buildTimeOptions(time);
+  }
+
+  /** 入力欄の値 → ISO 8601。どちらか空なら null。 */
+  function readScheduledInput() {
+    const day = el("f-date").value;
+    const time = el("f-time").value;
+    if (!day || !time) return null;
+    return fromJstInputValue(`${day}T${time}`);
   }
 
   function formatJst(iso) {
@@ -475,8 +504,8 @@
     }
 
     const mode = document.querySelector('input[name="when"]:checked').value;
-    const scheduledValue = el("f-scheduled").value;
-    if (mode === "scheduled" && !scheduledValue) {
+    const scheduledAt = readScheduledInput();
+    if (mode === "scheduled" && !scheduledAt) {
       banner("投稿日時を選んでください。", "error");
       return;
     }
@@ -488,7 +517,7 @@
       }
 
       const item = { id: app.editingId || newId(), text };
-      if (mode === "scheduled") item.scheduled_at = fromJstInputValue(scheduledValue);
+      if (mode === "scheduled") item.scheduled_at = scheduledAt;
       const thread = threadInputs().map((input) => input.value.trim()).filter(Boolean);
       if (thread.length) item.thread = thread;
       if (imageUrl) item.image_url = imageUrl;
@@ -562,11 +591,9 @@
   function applyQuick(kind) {
     const now = new Date();
     if (kind === "tomorrow9" || kind === "tomorrow19") {
-      const hour = kind === "tomorrow9" ? "09" : "19";
       const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
-      const input = el("f-scheduled");
-      input.step = String(STEP_MINUTES * 60);
-      input.value = `${toJstInputValue(tomorrow).slice(0, 10)}T${hour}:00`;
+      el("f-date").value = toJstInputValue(tomorrow).slice(0, 10);
+      buildTimeOptions(kind === "tomorrow9" ? "09:00" : "19:00");
       return;
     }
     setScheduledInput(roundUpToStep(new Date(now.getTime() + Number(kind) * 60000)));

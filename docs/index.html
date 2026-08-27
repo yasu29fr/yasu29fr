@@ -71,15 +71,18 @@
         <fieldset class="when">
           <legend>いつ投稿するか</legend>
           <label class="radio">
-            <input type="radio" name="when" value="scheduled" checked />
-            日時を指定する
-          </label>
-          <label class="radio">
             <input type="radio" name="when" value="queue" />
             順番待ちに入れる（毎日 9:00 に上から 1 件ずつ）
           </label>
+          <label class="radio">
+            <input type="radio" name="when" value="scheduled" checked />
+            日時を指定する
+          </label>
           <div id="when-scheduled">
-            <input id="f-scheduled" type="datetime-local" step="600" />
+            <div class="datetime">
+              <input id="f-date" type="date" aria-label="投稿する日付" />
+              <select id="f-time" aria-label="投稿する時刻"></select>
+            </div>
             <div class="note">日本時間・10 分刻みで指定します。実際の投稿は最大 15 分ほど遅れることがあります。</div>
             <div class="row quick">
               <button class="btn btn-chip" type="button" data-quick="30">30分後</button>

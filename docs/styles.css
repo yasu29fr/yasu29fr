@@ -157,6 +157,9 @@ fieldset.when legend { padding: 0 0.35rem; font-size: 0.85rem; color: var(--fg-m
 #when-scheduled { margin-top: 0.6rem; }
 
 .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.datetime { display: flex; gap: 0.5rem; }
+.datetime input { flex: 1 1 60%; margin-top: 0; }
+.datetime select { flex: 1 1 40%; margin-top: 0; }
 .row.quick { margin-top: 0.5rem; }
 
 .btn {
