@@ -79,8 +79,8 @@
             順番待ちに入れる（毎日 9:00 に上から 1 件ずつ）
           </label>
           <div id="when-scheduled">
-            <input id="f-scheduled" type="datetime-local" />
-            <div class="note">日本時間で指定します。実際の投稿は最大 15 分ほど遅れることがあります。</div>
+            <input id="f-scheduled" type="datetime-local" step="600" />
+            <div class="note">日本時間・10 分刻みで指定します。実際の投稿は最大 15 分ほど遅れることがあります。</div>
             <div class="row quick">
               <button class="btn btn-chip" type="button" data-quick="30">30分後</button>
               <button class="btn btn-chip" type="button" data-quick="180">3時間後</button>

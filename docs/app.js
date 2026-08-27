@@ -194,6 +194,32 @@
   /** "YYYY-MM-DDTHH:MM"（日本時間） → ISO 8601 のオフセット付き文字列 */
   const fromJstInputValue = (value) => `${value}:00+09:00`;
 
+  /** 日時の選択は 10 分刻み。端数は次の 10 分に切り上げる。 */
+  const STEP_MINUTES = 10;
+
+  function roundUpToStep(date) {
+    const step = STEP_MINUTES * 60000;
+    return new Date(Math.ceil(date.getTime() / step) * step);
+  }
+
+  /** 初期値は「現在時刻の 1 時間後」。 */
+  const defaultScheduledAt = () =>
+    roundUpToStep(new Date(Date.now() + 60 * 60000));
+
+  /**
+   * 入力欄に日時を入れる。
+   *
+   * 手書きの JSONL などで 10 分刻みでない予約もありうる。そのまま入れると
+   * ブラウザの入力チェックに引っかかって保存できなくなるので、その回だけ
+   * 刻みを 1 分に緩めて元の時刻を保つ。
+   */
+  function setScheduledInput(date) {
+    const input = el("f-scheduled");
+    const aligned = date.getMinutes() % STEP_MINUTES === 0 && date.getSeconds() === 0;
+    input.step = aligned ? String(STEP_MINUTES * 60) : "60";
+    input.value = toJstInputValue(date);
+  }
+
   function formatJst(iso) {
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return iso;
@@ -366,6 +392,7 @@
     el("cancel-edit").hidden = true;
     el("count-text").textContent = "0";
     el("count-text").parentElement.classList.remove("over");
+    setScheduledInput(defaultScheduledAt());
     updateWhenVisibility();
   }
 
@@ -385,7 +412,7 @@
     }
     const mode = item.scheduled_at ? "scheduled" : "queue";
     document.querySelector(`input[name="when"][value="${mode}"]`).checked = true;
-    if (item.scheduled_at) el("f-scheduled").value = toJstInputValue(new Date(item.scheduled_at));
+    if (item.scheduled_at) setScheduledInput(new Date(item.scheduled_at));
     updateWhenVisibility();
     updateCounter();
     el("composer-title").textContent = "投稿を編集";
@@ -537,10 +564,12 @@
     if (kind === "tomorrow9" || kind === "tomorrow19") {
       const hour = kind === "tomorrow9" ? "09" : "19";
       const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
-      el("f-scheduled").value = `${toJstInputValue(tomorrow).slice(0, 10)}T${hour}:00`;
+      const input = el("f-scheduled");
+      input.step = String(STEP_MINUTES * 60);
+      input.value = `${toJstInputValue(tomorrow).slice(0, 10)}T${hour}:00`;
       return;
     }
-    el("f-scheduled").value = toJstInputValue(new Date(now.getTime() + Number(kind) * 60000));
+    setScheduledInput(roundUpToStep(new Date(now.getTime() + Number(kind) * 60000)));
   }
 
   function onImageChange(event) {
@@ -645,6 +674,7 @@
     el("cancel-edit").addEventListener("click", resetComposer);
     el("composer").addEventListener("submit", onSubmit);
 
+    setScheduledInput(defaultScheduledAt());
     updateWhenVisibility();
     connect();
   }
