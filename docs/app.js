@@ -160,7 +160,8 @@
     return JSON.parse(body.slice(start, end + 1));
   }
 
-  async function requestProofread(text) {
+  /** Claude を 1 回呼び、text ブロックだけをつないで返す。 */
+  async function callClaude({ system, user, maxTokens = 4000 }) {
     let response;
     try {
       response = await fetch(ANTHROPIC_URL, {
@@ -174,10 +175,10 @@
         },
         body: JSON.stringify({
           model: PROOFREAD_MODEL,
-          max_tokens: 4000,
+          max_tokens: maxTokens,
           output_config: { effort: "low" },
-          system: PROOFREAD_SYSTEM,
-          messages: [{ role: "user", content: text }],
+          system,
+          messages: [{ role: "user", content: user }],
         }),
       });
     } catch (_) {
@@ -189,17 +190,20 @@
       const message = (data.error && data.error.message) || `HTTP ${response.status}`;
       if (response.status === 401) throw new Error("Anthropic の API キーが無効です。");
       if (response.status === 429) throw new Error("回数の上限に達しました。少し待ってからお試しください。");
-      throw new Error(`校正に失敗しました: ${message}`);
+      throw new Error(`Claude の呼び出しに失敗しました: ${message}`);
     }
     if (data.stop_reason === "refusal") {
-      throw new Error("この内容の校正は見送られました。");
+      throw new Error("この内容の処理は見送られました。");
     }
-
     // thinking ブロックが混ざるので text ブロックだけを拾う
-    const body = (data.content || [])
+    return (data.content || [])
       .filter((block) => block.type === "text")
       .map((block) => block.text)
       .join("");
+  }
+
+  async function requestProofread(text) {
+    const body = await callClaude({ system: PROOFREAD_SYSTEM, user: text });
     const parsed = extractJson(body);
     if (typeof parsed.revised !== "string" || !parsed.revised.trim()) {
       throw new Error("校正結果が空でした。");
@@ -260,6 +264,168 @@
   function updateProofreadVisibility() {
     el("proofread-bar").hidden = !app.cfg.anthropicKey;
     if (!app.cfg.anthropicKey) el("proofread-result").hidden = true;
+  }
+
+  // ------------------------------------------------------------ ネタを分ける
+
+  const SPLIT_SYSTEM = `あなたは日本語の SNS 投稿（Threads）の編集者です。
+渡された「ネタ」を、独立して読める投稿に分けます。
+
+守ること:
+- 書き手の言葉づかいをそのまま活かす。別人が書いたような文章にしない
+- ネタに書かれていない事実を足さない。話を盛らない
+- 1 本ずつ単独で読めるようにする。「①」「その2」「続く」のような連番や引きは付けない
+- 並びは、順に読んだときに自然な順序にする
+- 1 本あたり 500 文字以内。SNS なので短いほうがよい（目安 100〜200 字）
+- 絵文字は内容に合うときだけ、多くても 1 本につき 1 つ
+- ネタが薄くて指定の本数に届かないときは、無理に薄めず少ない本数で返す
+
+出力は次の形の JSON だけを返してください。前後に説明やコードフェンスを付けないこと。
+{"posts": [{"text": "投稿の本文", "note": "この投稿で何を伝えるかを一言で"}]}`;
+
+  async function requestSplit(source, parts) {
+    const data = await callClaude({
+      system: SPLIT_SYSTEM,
+      user: `次のネタを ${parts} 本に分けてください。\n\n---\n${source}`,
+      maxTokens: 8000,
+    });
+    const parsed = extractJson(data);
+    const posts = (parsed.posts || [])
+      .map((post) => (post && typeof post.text === "string" ? post : null))
+      .filter((post) => post && post.text.trim());
+    if (!posts.length) throw new Error("投稿を作れませんでした。ネタを増やしてお試しください。");
+    return posts;
+  }
+
+  function renderSplit(posts) {
+    const list = el("split-items");
+    list.innerHTML = "";
+    posts.forEach((post, index) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "split-item";
+
+      const head = document.createElement("div");
+      head.className = "card-when";
+      head.textContent = `${index + 1} 本目${post.note ? ` — ${post.note}` : ""}`;
+
+      const textarea = document.createElement("textarea");
+      textarea.rows = 4;
+      textarea.maxLength = MAX_TEXT;
+      textarea.value = post.text.trim();
+
+      const counter = document.createElement("div");
+      counter.className = "counter";
+      const update = () => {
+        counter.textContent = `${textarea.value.length} / ${MAX_TEXT}`;
+        counter.classList.toggle("over", textarea.value.length > MAX_TEXT);
+      };
+      textarea.addEventListener("input", update);
+      update();
+
+      const actions = document.createElement("div");
+      actions.className = "card-actions";
+      actions.append(
+        button("外す", () => {
+          wrapper.remove();
+          updateSplitPreview();
+        }, "btn-danger"),
+      );
+
+      wrapper.append(head, textarea, counter, actions);
+      list.append(wrapper);
+    });
+
+    setScheduledInput(defaultScheduledAt(), "s-date", "s-time");
+    el("split-result").hidden = false;
+    updateSplitPreview();
+  }
+
+  const splitTexts = () =>
+    Array.from(document.querySelectorAll("#split-items textarea"))
+      .map((node) => node.value.trim())
+      .filter(Boolean);
+
+  /** 1 本目の日時と間隔から、各投稿の予約時刻を組み立てる。 */
+  function splitSchedule() {
+    const start = readScheduledInput("s-date", "s-time");
+    if (!start) return [];
+    const interval = Number(el("s-interval").value) * 60000;
+    const base = new Date(start).getTime();
+    return splitTexts().map((text, index) => ({
+      text,
+      scheduled_at: fromJstInputValue(toJstInputValue(new Date(base + index * interval))),
+    }));
+  }
+
+  function updateSplitPreview() {
+    const schedule = splitSchedule();
+    el("split-preview").textContent = schedule.length
+      ? schedule.map((item, i) => `${i + 1} 本目: ${formatJst(item.scheduled_at)}`).join(" / ")
+      : "日時を選んでください。";
+  }
+
+  async function onSplit(event) {
+    event.preventDefault();
+    if (!app.cfg.anthropicKey) {
+      banner("設定で Anthropic の API キーを登録してください。", "error");
+      return;
+    }
+    const source = el("s-source").value.trim();
+    if (!source) {
+      banner("ネタを書いてください。", "error");
+      return;
+    }
+    const button = el("split");
+    const status = el("split-status");
+    button.disabled = true;
+    status.textContent = "Claude が読んでいます…";
+    el("split-result").hidden = true;
+    try {
+      const posts = await requestSplit(source, Number(el("s-parts").value));
+      renderSplit(posts);
+      status.textContent = "";
+      banner(`${posts.length} 本になりました。確認して予約してください。`, "ok");
+    } catch (error) {
+      status.textContent = "";
+      banner(error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function onSaveSplit() {
+    const schedule = splitSchedule();
+    if (!schedule.length) {
+      banner("予約する投稿がありません。", "error");
+      return;
+    }
+    const tooLong = schedule.find((item) => item.text.length > MAX_TEXT);
+    if (tooLong) {
+      banner(`${MAX_TEXT} 文字を超えている投稿があります。`, "error");
+      return;
+    }
+
+    const saveButton = el("save-split");
+    saveButton.disabled = true;
+    banner("予約しています…");
+    try {
+      for (const item of schedule) {
+        app.queue.items.push({ id: newId(), text: item.text, scheduled_at: item.scheduled_at });
+      }
+      await commitQueue(`chore(queue): ネタから ${schedule.length} 本を予約`);
+      el("split-result").hidden = true;
+      el("splitter").reset();
+      el("s-count").textContent = "0";
+      render();
+      banner(`${schedule.length} 本を予約しました。`, "ok");
+      switchTab("queue");
+    } catch (error) {
+      // 失敗した場合はキューを読み直して、追加しかけの状態を残さない
+      banner(error.message || "予約に失敗しました。", "error");
+      await reload().catch(() => {});
+    } finally {
+      saveButton.disabled = false;
+    }
   }
 
   // -------------------------------------------------------------- キュー
@@ -352,7 +518,7 @@
    * 時刻だけ独立した select にして刻みを確実にしている。手書きの JSONL に
    * 10 分刻みでない予約があった場合は、その値だけ選択肢に足して元の時刻を保つ。
    */
-  function buildTimeOptions(selected) {
+  function buildTimeOptions(selected, selectId = "f-time") {
     const values = [];
     for (let minutes = 0; minutes < 24 * 60; minutes += STEP_MINUTES) {
       values.push(
@@ -363,7 +529,7 @@
       values.push(selected);
       values.sort();
     }
-    const select = el("f-time");
+    const select = el(selectId);
     select.innerHTML = "";
     for (const value of values) {
       const option = document.createElement("option");
@@ -375,16 +541,16 @@
   }
 
   /** 入力欄（日付 + 時刻）に日時を入れる。 */
-  function setScheduledInput(date) {
+  function setScheduledInput(date, dateId = "f-date", timeId = "f-time") {
     const [day, time] = toJstInputValue(date).split("T");
-    el("f-date").value = day;
-    buildTimeOptions(time);
+    el(dateId).value = day;
+    buildTimeOptions(time, timeId);
   }
 
   /** 入力欄の値 → ISO 8601。どちらか空なら null。 */
-  function readScheduledInput() {
-    const day = el("f-date").value;
-    const time = el("f-time").value;
+  function readScheduledInput(dateId = "f-date", timeId = "f-time") {
+    const day = el(dateId).value;
+    const time = el(timeId).value;
     if (!day || !time) return null;
     return fromJstInputValue(`${day}T${time}`);
   }
@@ -833,6 +999,17 @@
     el("dismiss-proofread").addEventListener("click", () => {
       el("proofread-result").hidden = true;
     });
+    el("splitter").addEventListener("submit", onSplit);
+    el("s-source").addEventListener("input", () => {
+      el("s-count").textContent = String(el("s-source").value.length);
+    });
+    el("save-split").addEventListener("click", onSaveSplit);
+    el("discard-split").addEventListener("click", () => {
+      el("split-result").hidden = true;
+    });
+    for (const id of ["s-date", "s-time", "s-interval"]) {
+      el(id).addEventListener("change", updateSplitPreview);
+    }
     el("cancel-edit").addEventListener("click", resetComposer);
     el("composer").addEventListener("submit", onSubmit);
 

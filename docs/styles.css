@@ -79,19 +79,25 @@ body {
 
 .tabs {
   display: flex;
-  gap: 0.25rem;
+  gap: 0.15rem;
   margin: 1rem 0;
   border-bottom: 1px solid var(--border);
+  /* タブが増えても折り返さず、入りきらなければ横スクロールさせる */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
 
 .tab {
-  padding: 0.5rem 0.75rem;
+  flex: 0 0 auto;
+  padding: 0.5rem 0.55rem;
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
   color: var(--fg-muted);
   font: inherit;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
   cursor: pointer;
 }
 .tab.is-active { color: var(--fg); border-bottom-color: var(--accent); }
@@ -233,3 +239,17 @@ a { color: var(--accent); }
 }
 .notes li { margin-bottom: 0.2rem; }
 .notes .kind { color: var(--fg); }
+
+/* ネタから作る */
+.split-item {
+  margin-bottom: 0.9rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.split-item textarea { margin-top: 0.35rem; }
+.split-item .counter { margin: 0.2rem 0 0; }
+.split-item .card-actions { margin-top: 0.3rem; }
+
+#split-preview { margin: 0.6rem 0 0; }

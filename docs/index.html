@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>Threads 投稿予約</title>
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link rel="stylesheet" href="./styles.css?v=5" />
   </head>
   <body>
     <header class="topbar">
@@ -62,6 +62,7 @@
 
     <nav class="tabs" role="tablist">
       <button class="tab is-active" data-tab="compose" role="tab" type="button">投稿を作る</button>
+      <button class="tab" data-tab="split" role="tab" type="button">ネタから作る</button>
       <button class="tab" data-tab="queue" role="tab" type="button">
         予約中 <span id="queue-count" class="count">0</span>
       </button>
@@ -162,6 +163,64 @@
       </form>
     </section>
 
+    <!-- ネタから作る -->
+    <section id="tab-split" class="tabpanel" role="tabpanel" hidden>
+      <form id="splitter" class="panel">
+        <h2>ネタから投稿を作る</h2>
+        <p class="note">
+          話したいことをそのまま書いてください。箇条書きでも、思いつくままでも構いません。
+          Claude が読んで、独立して読める投稿に分けます。
+        </p>
+        <label>
+          ネタ
+          <textarea id="s-source" rows="8" placeholder="例: 今日は自動投稿の仕組みを作った。GitHub Actions の cron が動かなくて…"></textarea>
+        </label>
+        <div class="counter"><span id="s-count">0</span> 文字</div>
+        <label>
+          何本に分けるか
+          <select id="s-parts">
+            <option value="2">2 本</option>
+            <option value="3" selected>3 本</option>
+            <option value="4">4 本</option>
+            <option value="5">5 本</option>
+          </select>
+        </label>
+        <div class="row">
+          <button id="split" class="btn btn-primary" type="submit">Claude で分ける</button>
+          <span id="split-status" class="note"></span>
+        </div>
+      </form>
+
+      <div id="split-result" class="panel" hidden>
+        <h2>できた投稿</h2>
+        <p class="note">そのまま直せます。要らない本は「外す」で除けます。</p>
+        <div id="split-items"></div>
+
+        <fieldset class="when">
+          <legend>いつから投稿するか</legend>
+          <div class="datetime">
+            <input id="s-date" type="date" aria-label="1 本目の日付" />
+            <select id="s-time" aria-label="1 本目の時刻"></select>
+          </div>
+          <label>
+            間隔
+            <select id="s-interval">
+              <option value="30">30 分おき</option>
+              <option value="60">1 時間おき</option>
+              <option value="180">3 時間おき</option>
+              <option value="1440" selected>1 日おき</option>
+            </select>
+          </label>
+          <div id="split-preview" class="note"></div>
+        </fieldset>
+
+        <div class="row">
+          <button id="save-split" class="btn btn-primary" type="button">まとめて予約する</button>
+          <button id="discard-split" class="btn btn-ghost" type="button">やめる</button>
+        </div>
+      </div>
+    </section>
+
     <!-- 予約中 -->
     <section id="tab-queue" class="tabpanel" role="tabpanel" hidden>
       <div id="queue-list" class="list"></div>
@@ -174,6 +233,6 @@
       <p id="history-empty" class="empty" hidden>まだ投稿はありません。</p>
     </section>
 
-    <script src="./app.js?v=4"></script>
+    <script src="./app.js?v=5"></script>
   </body>
 </html>
