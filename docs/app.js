@@ -13,6 +13,7 @@
   const MAX_TEXT = 500;
   const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
   const STORE_KEY = "threads-bot.settings";
+  const DRAFT_KEY = "threads-bot.draft";
   const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
   const ANTHROPIC_VERSION = "2023-06-01";
   const PROOFREAD_MODEL = "claude-opus-5";
@@ -297,12 +298,13 @@
     return posts;
   }
 
-  function renderSplit(posts) {
+  function renderSplit(posts, schedule) {
     const list = el("split-items");
     list.innerHTML = "";
     posts.forEach((post, index) => {
       const wrapper = document.createElement("div");
       wrapper.className = "split-item";
+      wrapper.dataset.note = post.note || "";
 
       const head = document.createElement("div");
       head.className = "card-when";
@@ -335,7 +337,13 @@
       list.append(wrapper);
     });
 
-    setScheduledInput(defaultScheduledAt(), "s-date", "s-time");
+    if (schedule && schedule.date && schedule.time) {
+      el("s-date").value = schedule.date;
+      buildTimeOptions(schedule.time, "s-time");
+      el("s-interval").value = schedule.interval || "1440";
+    } else {
+      setScheduledInput(defaultScheduledAt(), "s-date", "s-time");
+    }
     el("split-result").hidden = false;
     updateSplitPreview();
   }
@@ -416,6 +424,8 @@
       el("split-result").hidden = true;
       el("splitter").reset();
       el("s-count").textContent = "0";
+      el("split-items").innerHTML = "";
+      clearDraft();
       render();
       banner(`${schedule.length} 本を予約しました。`, "ok");
       switchTab("queue");
@@ -852,6 +862,7 @@
       await commitQueue(
         index >= 0 ? "chore(queue): 投稿を更新" : "chore(queue): 投稿を追加",
       );
+      clearDraft();
       resetComposer();
       render();
       banner(`${formatJst(item.scheduled_at)} に投稿されます。`, "ok");
@@ -876,6 +887,129 @@
     } finally {
       submit.disabled = false;
     }
+  }
+
+  // ------------------------------------------------------------ 書きかけの保存
+
+  /**
+   * 入力中の内容をブラウザに控えておく。
+   *
+   * 画面を閉じたり再読み込みしたりしても書きかけが消えないようにするため。
+   * 保存先はこのブラウザの中だけで、キューには送らない。
+   */
+  function readDraft() {
+    try {
+      return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writeDraft(draft) {
+    try {
+      if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      else localStorage.removeItem(DRAFT_KEY);
+    } catch (_) {
+      // 保存できない環境（プライベートモードなど）でも操作は続けられるようにする
+    }
+  }
+
+  const splitItems = () => Array.from(document.querySelectorAll("#split-items .split-item"));
+
+  function collectDraft() {
+    return {
+      version: 1,
+      tab: (document.querySelector(".tab.is-active") || {}).dataset?.tab || "compose",
+      composer: {
+        editingId: app.editingId,
+        text: el("f-text").value,
+        date: el("f-date").value,
+        time: el("f-time").value,
+        thread: threadInputs().map((node) => node.value),
+        alt: el("f-alt").value,
+        link: el("f-link").value,
+        replyControl: el("f-reply-control").value,
+        // 選んだ画像ファイルそのものは持ち越せない。すでに URL があるものだけ残す。
+        imageUrl: (app.pendingImage && app.pendingImage.url) || "",
+        hadImageFile: Boolean(app.pendingImage && app.pendingImage.file),
+      },
+      splitter: {
+        source: el("s-source").value,
+        parts: el("s-parts").value,
+        posts: splitItems().map((node) => ({
+          text: node.querySelector("textarea").value,
+          note: node.dataset.note || "",
+        })),
+        date: el("s-date").value,
+        time: el("s-time").value,
+        interval: el("s-interval").value,
+      },
+    };
+  }
+
+  let draftTimer = null;
+  function saveDraftSoon() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => writeDraft(collectDraft()), 400);
+  }
+
+  function clearDraft() {
+    clearTimeout(draftTimer);
+    writeDraft(null);
+  }
+
+  /** 書きかけがあれば画面に戻す。何か戻したときだけ true を返す。 */
+  function restoreDraft() {
+    const draft = readDraft();
+    if (!draft) return false;
+    let restored = false;
+    const composer = draft.composer || {};
+    const splitter = draft.splitter || {};
+
+    if (composer.text || composer.editingId) {
+      app.editingId = composer.editingId || null;
+      el("f-text").value = composer.text || "";
+      el("f-alt").value = composer.alt || "";
+      el("f-link").value = composer.link || "";
+      el("f-reply-control").value = composer.replyControl || "";
+      for (const part of composer.thread || []) addThreadPart(part);
+      if (composer.date && composer.time) {
+        el("f-date").value = composer.date;
+        buildTimeOptions(composer.time, "f-time");
+      }
+      if (composer.imageUrl) {
+        app.pendingImage = { url: composer.imageUrl };
+        el("image-thumb").src = composer.imageUrl;
+        el("image-name").textContent = composer.imageUrl;
+        el("image-preview").hidden = false;
+      }
+      if (app.editingId) {
+        el("composer-title").textContent = "投稿を編集";
+        el("submit").textContent = "保存する";
+        el("cancel-edit").hidden = false;
+      }
+      updateCounter();
+      restored = true;
+    }
+
+    if (splitter.source) {
+      el("s-source").value = splitter.source;
+      el("s-count").textContent = String(splitter.source.length);
+      if (splitter.parts) el("s-parts").value = splitter.parts;
+      restored = true;
+    }
+    if (splitter.posts && splitter.posts.length) {
+      renderSplit(splitter.posts, splitter);
+      restored = true;
+    }
+
+    if (restored && draft.tab) switchTab(draft.tab);
+    if (restored && composer.hadImageFile) {
+      banner("書きかけを戻しました。画像だけは選び直してください。", "ok");
+    } else if (restored) {
+      banner("書きかけを戻しました。", "ok");
+    }
+    return restored;
   }
 
   // ---------------------------------------------------------------- 画面
@@ -1023,11 +1157,26 @@
     for (const id of ["s-date", "s-time", "s-interval"]) {
       el(id).addEventListener("change", updateSplitPreview);
     }
-    el("cancel-edit").addEventListener("click", resetComposer);
+    el("cancel-edit").addEventListener("click", () => {
+      clearDraft();
+      resetComposer();
+    });
     el("composer").addEventListener("submit", onSubmit);
 
     setScheduledInput(defaultScheduledAt());
     updateProofreadVisibility();
+
+    // 書きかけの保存。入力・選択・タブ移動のたびに控える。
+    for (const id of ["composer", "splitter", "split-result"]) {
+      const node = el(id);
+      node.addEventListener("input", saveDraftSoon);
+      node.addEventListener("change", saveDraftSoon);
+    }
+    for (const tab of document.querySelectorAll(".tab")) {
+      tab.addEventListener("click", saveDraftSoon);
+    }
+    restoreDraft();
+
     connect();
   }
 
