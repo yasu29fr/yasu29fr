@@ -253,3 +253,14 @@ a { color: var(--accent); }
 .split-item .card-actions { margin-top: 0.3rem; }
 
 #split-preview { margin: 0.6rem 0 0; }
+
+/* 分割結果のなかに出す校正欄は、外側の枠と入れ子になるので控えめにする */
+.proofread-inline {
+  margin-top: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-soft);
+  font-size: 0.92rem;
+}
+.proofread-inline .notes { margin-bottom: 0.55rem; }
+.split-item .card-actions { flex-wrap: wrap; align-items: center; }
+.split-item .card-actions .note { margin: 0; }

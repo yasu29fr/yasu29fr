@@ -267,6 +267,79 @@
     if (!app.cfg.anthropicKey) el("proofread-result").hidden = true;
   }
 
+  /**
+   * 入力欄ひとつぶんの校正ボタンと結果欄を作る。
+   *
+   * 投稿フォームと同じく、校正案をいったん見せてから反映する。
+   * 元の文をいきなり書き換えると、直しすぎに気づけないため。
+   */
+  function proofreadControl(textarea, onApply) {
+    const status = document.createElement("span");
+    status.className = "note";
+
+    const result = document.createElement("div");
+    result.className = "proofread proofread-inline";
+    result.hidden = true;
+
+    const revised = document.createElement("div");
+    revised.className = "card-text";
+    const notes = document.createElement("ul");
+    notes.className = "notes";
+    const buttons = document.createElement("div");
+    buttons.className = "row";
+
+    const apply = button("この文面にする", () => {
+      textarea.value = revised.textContent;
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      result.hidden = true;
+      if (onApply) onApply();
+    });
+    apply.className = "btn btn-primary";
+    buttons.append(apply, button("閉じる", () => { result.hidden = true; }));
+    result.append(revised, notes, buttons);
+
+    const trigger = button("校正", async () => {
+      const text = textarea.value.trim();
+      if (!text) {
+        banner("本文が空です。", "error");
+        return;
+      }
+      if (!app.cfg.anthropicKey) {
+        banner("設定で Anthropic の API キーを登録してください。", "error");
+        return;
+      }
+      trigger.disabled = true;
+      status.textContent = "Claude が読んでいます…";
+      result.hidden = true;
+      try {
+        const outcome = await requestProofread(text);
+        revised.textContent = outcome.revised;
+        notes.innerHTML = "";
+        if (outcome.revised === text && !outcome.notes.length) {
+          const item = document.createElement("li");
+          item.textContent = "直すところは見つかりませんでした。";
+          notes.append(item);
+        }
+        for (const note of outcome.notes) {
+          const item = document.createElement("li");
+          const kind = document.createElement("span");
+          kind.className = "kind";
+          kind.textContent = `${note.kind || "指摘"}: `;
+          item.append(kind, document.createTextNode(note.detail || ""));
+          notes.append(item);
+        }
+        result.hidden = false;
+      } catch (error) {
+        banner(error.message, "error");
+      } finally {
+        trigger.disabled = false;
+        status.textContent = "";
+      }
+    });
+
+    return { trigger, status, result };
+  }
+
   // ------------------------------------------------------------ ネタを分ける
 
   const SPLIT_SYSTEM = `あなたは日本語の SNS 投稿（Threads）の編集者です。
@@ -324,16 +397,20 @@
       textarea.addEventListener("input", update);
       update();
 
+      const proofread = proofreadControl(textarea, update);
+
       const actions = document.createElement("div");
       actions.className = "card-actions";
       actions.append(
+        proofread.trigger,
         button("外す", () => {
           wrapper.remove();
           updateSplitPreview();
         }, "btn-danger"),
+        proofread.status,
       );
 
-      wrapper.append(head, textarea, counter, actions);
+      wrapper.append(head, textarea, counter, actions, proofread.result);
       list.append(wrapper);
     });
 
