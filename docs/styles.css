@@ -8,6 +8,7 @@
   --accent-fg: #ffffff;
   --danger: #c1352b;
   --ok: #1a7f4b;
+  --accent-soft: #e7f0fe;
   --radius: 10px;
 }
 
@@ -22,6 +23,7 @@
     --accent-fg: #0b1220;
     --danger: #ff7a70;
     --ok: #5cd196;
+    --accent-soft: #16263d;
   }
 }
 
@@ -264,3 +266,50 @@ a { color: var(--accent); }
 .proofread-inline .notes { margin-bottom: 0.55rem; }
 .split-item .card-actions { flex-wrap: wrap; align-items: center; }
 .split-item .card-actions .note { margin: 0; }
+
+/* 編集中であることを、色と帯ではっきり出す */
+.panel.is-editing {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.9rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--accent-soft);
+  border-radius: 8px;
+}
+
+.edit-chip {
+  flex: 0 0 auto;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.edit-target {
+  flex: 1 1 8rem;
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.edit-bar .btn { flex: 0 0 auto; padding: 0.25rem 0.6rem; font-size: 0.82rem; }
+
+/* 別のタブにいても編集中だと分かるように印を出す */
+.tab-dot {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-left: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}

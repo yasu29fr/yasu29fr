@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>Threads 投稿予約</title>
-    <link rel="stylesheet" href="./styles.css?v=8" />
+    <link rel="stylesheet" href="./styles.css?v=9" />
   </head>
   <body>
     <header class="topbar">
@@ -72,6 +72,11 @@
     <!-- 投稿を作る -->
     <section id="tab-compose" class="tabpanel" role="tabpanel">
       <form id="composer" class="panel">
+        <div id="edit-bar" class="edit-bar" hidden>
+          <span class="edit-chip">編集中</span>
+          <span id="edit-target" class="edit-target"></span>
+          <button id="cancel-edit-top" class="btn btn-ghost" type="button">やめる</button>
+        </div>
         <h2 id="composer-title">新しい投稿</h2>
 
         <label>
@@ -233,6 +238,6 @@
       <p id="history-empty" class="empty" hidden>まだ投稿はありません。</p>
     </section>
 
-    <script src="./app.js?v=8"></script>
+    <script src="./app.js?v=9"></script>
   </body>
 </html>

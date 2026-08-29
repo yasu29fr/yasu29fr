@@ -563,6 +563,7 @@
       app.posted = {};
     }
     render();
+    updateEditIndicator();
   }
 
   async function commitQueue(message) {
@@ -824,12 +825,48 @@
     el("thread-parts").innerHTML = "";
     el("image-preview").hidden = true;
     el("proofread-result").hidden = true;
-    el("composer-title").textContent = "新しい投稿";
-    el("submit").textContent = "キューに入れる";
-    el("cancel-edit").hidden = true;
     el("count-text").textContent = "0";
     el("count-text").parentElement.classList.remove("over");
+    updateEditIndicator();
     setScheduledInput(defaultScheduledAt());
+  }
+
+  /**
+   * 編集中かどうかを画面に反映する。
+   *
+   * 見出しとボタンの文言だけでは気づきにくかったため、フォームに帯を出し、
+   * タブにも印を付けて、別のタブにいても分かるようにしている。
+   */
+  function updateEditIndicator() {
+    const editing = Boolean(app.editingId);
+    el("composer").classList.toggle("is-editing", editing);
+    el("edit-bar").hidden = !editing;
+    el("cancel-edit").hidden = !editing;
+    el("composer-title").textContent = editing ? "投稿を編集" : "新しい投稿";
+    el("submit").textContent = editing ? "保存する" : "キューに入れる";
+
+    const target = el("edit-target");
+    if (editing) {
+      const item = app.queue.items.find((candidate) => candidate.id === app.editingId);
+      const when = item && item.scheduled_at ? formatJst(item.scheduled_at) : null;
+      target.textContent = when ? `${when} に投稿予定のものを直しています` : "予約ずみの投稿を直しています";
+    } else {
+      target.textContent = "";
+    }
+
+    for (const tab of document.querySelectorAll(".tab")) {
+      const dot = tab.querySelector(".tab-dot");
+      if (tab.dataset.tab === "compose" && editing) {
+        if (!dot) {
+          const mark = document.createElement("span");
+          mark.className = "tab-dot";
+          mark.title = "編集中の投稿があります";
+          tab.append(mark);
+        }
+      } else if (dot) {
+        dot.remove();
+      }
+    }
   }
 
   function startEdit(item) {
@@ -850,9 +887,7 @@
       item.scheduled_at ? new Date(item.scheduled_at) : defaultScheduledAt(),
     );
     updateCounter();
-    el("composer-title").textContent = "投稿を編集";
-    el("submit").textContent = "保存する";
-    el("cancel-edit").hidden = false;
+    updateEditIndicator();
     switchTab("compose");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -1060,11 +1095,7 @@
         el("image-name").textContent = composer.imageUrl;
         el("image-preview").hidden = false;
       }
-      if (app.editingId) {
-        el("composer-title").textContent = "投稿を編集";
-        el("submit").textContent = "保存する";
-        el("cancel-edit").hidden = false;
-      }
+      updateEditIndicator();
       updateCounter();
       restored = true;
     }
@@ -1234,10 +1265,12 @@
     for (const id of ["s-date", "s-time", "s-interval"]) {
       el(id).addEventListener("change", updateSplitPreview);
     }
-    el("cancel-edit").addEventListener("click", () => {
+    const stopEditing = () => {
       clearDraft();
       resetComposer();
-    });
+    };
+    el("cancel-edit").addEventListener("click", stopEditing);
+    el("cancel-edit-top").addEventListener("click", stopEditing);
     el("composer").addEventListener("submit", onSubmit);
 
     setScheduledInput(defaultScheduledAt());
