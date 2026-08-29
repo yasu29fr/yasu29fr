@@ -400,17 +400,20 @@ push と PR で同じテストが「テスト」ワークフローとして走�
 `starter/` に配布用の一式を置いてあります。3 段階に分けてあり、第 1 段階
 （ブラウザから予約 → 自動投稿）だけで単体で完結します。
 
-渡す相手に伝えるのは 2 つだけです。
+渡すのは **`starter/step1/threads-bot-step1.zip`（52KB）** と、
+[`starter/step1/README.md`](starter/step1/README.md) の内容だけです。
+受け取った人がやることは 3 つ。
 
 1. GitHub で新しい public リポジトリを作る
-2. `starter/step1/PROMPT.md` の「--- ここから ---」以降を全文コピーして、
+2. ZIP を**展開せずに** 1 ファイルだけアップロードする
+3. `starter/step1/PROMPT.md` の「--- ここから ---」以降を全文コピーして、
    そのリポジトリを開いた Claude Code に貼る
 
-AI にコードを書かせず、完成品を `starter/step1/files/` に置いて「配置・検証・案内」だけを
-させる作りにしてあります。詳しくは [`starter/README.md`](starter/README.md) を見てください。
+AI にコードを書かせず、完成品を ZIP で渡して「展開・検証・案内」だけをさせる作りに
+してあります。詳しくは [`starter/README.md`](starter/README.md) を見てください。
 
 > `starter/step1/files/` はこのリポジトリのコードのコピーです。本体を直したら
-> `./starter/sync.sh` を実行して取り込み直してください。
+> `./starter/sync.sh` を実行してください。取り込み直したうえで ZIP も作り直します。
 
 ## 10. ファイル構成
 
