@@ -8,8 +8,7 @@ GitHub Actions から毎日 18:00 JST に起動される想定。
   - posts/queue.jsonl の直近の投稿（重複回避のため）
 
 必要な環境変数:
-  ANTHROPIC_API_KEY       必須。Anthropic の API キー
-  ANTHROPIC_WORKSPACE_ID  identity-linked なキーを使う場合は必須。ワークスペース ID
+  ANTHROPIC_API_KEY  必須。Anthropic の API キー
   BOARD_DOC_ID       任意。運用ボードの Google ドキュメント ID
   NETA_DOC_ID        任意。ネタ帳の Google ドキュメント ID
   ANTHROPIC_MODEL    任意。使うモデル。未指定なら利用可能なものから自動で選ぶ
@@ -79,22 +78,11 @@ def api_request(method: str, path: str, api_key: str, body: dict | None = None) 
     request.add_header("x-api-key", api_key)
     request.add_header("anthropic-version", API_VERSION)
     request.add_header("content-type", "application/json")
-    # identity-linked なキーは、どのワークスペースでの実行かを添える必要がある。
-    # 通常のキーでは不要なので、設定されているときだけ送る。
-    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
-    if workspace:
-        request.add_header("anthropic-workspace-id", workspace)
     try:
         with urllib.request.urlopen(request, timeout=180) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
-        if "anthropic-workspace-id" in detail:
-            fail(
-                "Anthropic の API キーが identity-linked のため、ワークスペース ID が要ります。"
-                " Variables に ANTHROPIC_WORKSPACE_ID を追加するか、"
-                " Console で通常の API キーを作り直して Secrets を差し替えてください。"
-            )
         fail(f"Anthropic API エラー ({exc.code}): {detail}")
     except Exception as exc:  # noqa: BLE001
         fail(f"Anthropic API に接続できませんでした: {exc}")
@@ -148,20 +136,59 @@ def recent_texts(entries: list[dict], count: int = 12) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(board: str, neta: str, recent: str, target_date) -> str:
+def find_filled(entries: list[dict], target_date) -> dict[int, dict]:
+    """対象日にすでに予約が入っている枠を、時 -> 投稿 の形で返す。"""
+    prefix = target_date.isoformat()
+    filled: dict[int, dict] = {}
+    for entry in entries:
+        scheduled = entry.get("scheduled_at")
+        if not isinstance(scheduled, str) or not scheduled.startswith(prefix):
+            continue
+        try:
+            hour = int(scheduled[11:13])
+        except (ValueError, IndexError):
+            continue
+        filled[hour] = entry
+    return filled
+
+
+def describe_filled(filled: dict[int, dict]) -> str:
+    if not filled:
+        return ""
+    parts = []
+    for hour in sorted(filled):
+        entry = filled[hour]
+        thread = " ".join(entry.get("thread") or [])
+        parts.append(f"- {hour}:00 ｜ {entry.get('text','')} {thread}".strip())
+    return "\n".join(parts)
+
+
+def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled) -> str:
     slot_lines = "\n".join(
         f"- {hour}:00 ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
-        for hour, pillar, form, aim in SLOTS
+        for hour, pillar, form, aim in needed
     )
     weekday = "月火水木金土日"[target_date.weekday()]
+    hours = "、".join(f"{hour}:00" for hour, *_ in needed)
+    already = describe_filled(filled)
     sections = [
         "あなたは YU さん（福井市のフリーランス Web クリエイター／SNS コンテンツ制作者）の",
         "Threads 発信チームの編集担当です。",
-        f"{target_date.isoformat()}（{weekday}）に投稿する 3 本を書いてください。",
+        f"{target_date.isoformat()}（{weekday}）の {hours} に投稿する {len(needed)} 本を書いてください。",
         "",
         "## 枠と役割",
         slot_lines,
         "",
+    ]
+    if already:
+        sections += [
+            "## 同じ日にすでに入っている投稿（YU さん本人が用意したもの）",
+            "これらとネタ・切り口・書き出しが重ならないようにしてください。",
+            "文体もこれらに寄せてください。",
+            already,
+            "",
+        ]
+    sections += [
         "## 運用ボード（最優先のルール。以下の指示と食い違ったらボードを優先する）",
         board or "（読み込めませんでした。以下の要点だけで書いてください）",
         "",
@@ -195,13 +222,13 @@ def build_prompt(board: str, neta: str, recent: str, target_date) -> str:
         "",
         "## 出力形式",
         "次の形の JSON だけを返してください。前後に説明や```を付けないこと。",
-        '{"posts": [{"hour": 6, "text": "本文", "thread": ["続き"], "note": "使った柱と型とネタ"},'
-        ' {"hour": 12, ...}, {"hour": 20, ...}]}',
+        '{"posts": [{"hour": <時>, "text": "本文", "thread": ["続き"], "note": "使った柱と型とネタ"}]}',
+        f"posts には {hours} のぶんだけを、この順で入れてください。",
     ]
     return "\n".join(sections)
 
 
-def generate(api_key: str, model: str, prompt: str) -> list[dict]:
+def generate(api_key: str, model: str, prompt: str, expected: int) -> list[dict]:
     payload = api_request(
         "POST",
         "/messages",
@@ -221,8 +248,8 @@ def generate(api_key: str, model: str, prompt: str) -> list[dict]:
         posts = json.loads(text)["posts"]
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
         fail(f"生成結果を JSON として読めませんでした: {exc}\n--- 生の出力 ---\n{text[:1000]}")
-    if len(posts) != len(SLOTS):
-        fail(f"3 本返るはずが {len(posts)} 本でした。")
+    if len(posts) != expected:
+        fail(f"{expected} 本返るはずが {len(posts)} 本でした。")
     return posts
 
 
@@ -248,24 +275,26 @@ def main() -> None:
     entries = parse_entries(lines)
     existing_ids = {str(e.get("id")) for e in entries if e.get("id")}
 
-    # すでに翌日ぶんが入っていれば何もしない（二重投入の防止）
-    already = {
-        e.get("scheduled_at", "")[:10] for e in entries if isinstance(e.get("scheduled_at"), str)
-    }
-    if target_date.isoformat() in already:
-        print(f"{target_date} の予約はすでに入っています。何もしません。")
+    # すでに埋まっている枠は触らず、空いている枠だけを作る
+    filled = find_filled(entries, target_date)
+    needed = [slot for slot in SLOTS if slot[0] not in filled]
+    if filled:
+        print("すでに予約済みの枠: " + "、".join(f"{h}:00" for h in sorted(filled)))
+    if not needed:
+        print(f"{target_date} は 3 枠とも埋まっています。何もしません。")
         return
+    print("これから作る枠: " + "、".join(f"{h}:00" for h, *_ in needed))
 
     board = fetch_doc(os.environ.get("BOARD_DOC_ID", "").strip(), "運用ボード")
     neta = fetch_doc(os.environ.get("NETA_DOC_ID", "").strip(), "ネタ帳")
 
     model = pick_model(api_key)
-    prompt = build_prompt(board, neta, recent_texts(entries), target_date)
-    posts = generate(api_key, model, prompt)
+    prompt = build_prompt(board, neta, recent_texts(entries), target_date, needed, filled)
+    posts = generate(api_key, model, prompt, len(needed))
 
     by_hour = {int(p["hour"]): p for p in posts}
     new_lines = []
-    for hour, *_ in SLOTS:
+    for hour, *_ in needed:
         post = by_hour.get(hour)
         if not post:
             fail(f"{hour}:00 の投稿が返ってきませんでした。")
