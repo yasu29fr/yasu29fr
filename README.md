@@ -36,7 +36,7 @@
 - Claude による校正（誤字脱字・表記ゆれ、読みやすさ、絵文字の提案）
 - ネタから複数本の投稿を作り、間隔を空けてまとめて予約
 - 書きかけの自動保存（画面を閉じても、再読み込みしても消えない）
-- ネタの記録（日時つきで Google ドキュメントに書き足す）
+- ネタの記録（日時つきで Google ドキュメントに書き足す）— **いまは止めています**（後述）
 
 ### 初回だけ必要な設定
 
@@ -76,7 +76,16 @@ Claude の出力をそのまま登録せず、必ず確認を挟む作りにし�
 - 1 本 100〜200 字を目安に、500 字以内
 - ネタが薄いときは、無理に指定の本数まで薄めない
 
-### ネタの記録（任意）
+### ネタの記録（いまは止めています）
+
+> **現在この機能は使っていません。** 設定の「ネタ帳の記録先 URL / 合言葉」を空にしてあるため、
+> 画面右上の **記録** ボタンは出ません。コードは消していないので、下の設定を入れ直せばすぐ戻ります。
+>
+> ただし**ネタ帳そのものは今も使っています**。「翌日ぶんを自動で作る」が `NETA_DOC_ID` の
+> ドキュメントを読んで投稿の材料にしているためです。止めたのは「画面から書き足す」側だけで、
+> 「ドキュメントを読む」側は動いています。ネタはいまのところ Google ドキュメントに直接書いています。
+
+以下は、再開するときの手順です。
 
 画面右上の **記録** から、思いついたことをその場で書き留められます。日時が自動で付き、
 Google ドキュメントの「ネタ帳」に書き足されます。投稿を考えるときの材料になります。
@@ -182,7 +191,8 @@ Google ドキュメントの「ネタ帳」に書き足されます。投稿を�
 （6:00 / 12:00 / 20:00）を書き、キューに追加します。外部 cron から毎日 18:00 (JST) に
 `threads-compose` で起動します。
 
-すでに翌日ぶんがキューにあるときは何もしません。二重に入ることはありません。
+**埋まっている枠には手を出しません。** 自分で 12:00 のぶんを入れてあれば、6:00 と 20:00 の
+2 本だけを作ります。3 枠とも埋まっていれば何もせずに終わります。二重に入ることはありません。
 
 **必要な設定**
 
@@ -258,13 +268,16 @@ curl -X POST https://api.github.com/repos/yasu29fr/yasu29fr/dispatches \
 
 > `repository_dispatch` も `schedule` と同じくデフォルトブランチのワークフローが動きます。
 
-時刻を変えたい場合は `.github/workflows/` の cron を編集します。**GitHub Actions の cron は UTC** です。
+**起動の時刻や間隔を変えるのは cron-job.org 側です。** リポジトリ内の cron は投稿時刻に
+関係しません。残っているのは次の 2 つだけです。
 
-| 日本時間 | cron |
-| --- | --- |
-| 毎日 9:00 | `0 0 * * *` |
-| 毎日 12:00 と 20:00 | `0 3,11 * * *` |
-| 平日 18:00 | `0 9 * * 1-5` |
+| 場所 | cron | 役割 |
+| --- | --- | --- |
+| `threads-post.yml` | `*/10 * * * *` | 外部 cron が止まったときの保険。発火しない前提で置いてある |
+| `threads-refresh-token.yml` | `0 3 * * 1` | 毎週月曜 12:00 (JST) のトークン更新 |
+
+書き換えるときは **GitHub Actions の cron は UTC** であることに注意してください
+（日本時間から 9 時間引く。例: 毎日 9:00 JST → `0 0 * * *`）。
 
 ## 3. キューを直接編集する
 
@@ -272,9 +285,12 @@ Web アプリを使わず、`posts/queue.jsonl` に 1 行 1 投稿の JSON を�
 
 ```jsonl
 {"text": "予約投稿。", "scheduled_at": "2026-09-01T09:00"}
-{"text": "画像つき。", "image_url": "https://example.com/photo.jpg", "alt_text": "作業机の写真"}
-{"text": "連投の1件目。", "thread": ["2件目は1件目への返信になります。", "3件目。"]}
+{"text": "画像つき。", "scheduled_at": "2026-09-01T12:00", "image_url": "https://example.com/photo.jpg", "alt_text": "作業机の写真"}
+{"text": "連投の1件目。", "scheduled_at": "2026-09-01T20:00", "thread": ["2件目は1件目への返信になります。", "3件目。"]}
 ```
+
+`scheduled_at` のない行は投稿されません。`threads-bot validate` がエラーにするので、
+ワークフローもそこで止まります。
 
 | フィールド | 必須 | 説明 |
 | --- | --- | --- |
@@ -287,8 +303,9 @@ Web アプリを使わず、`posts/queue.jsonl` に 1 行 1 投稿の JSON を�
 | `reply_control` | | `everyone` / `accounts_you_follow` / `mentioned_only` |
 | `thread` | | 連投。1 件目への返信として順につながります |
 
-投稿が終わった行はキューから消しても構いません（記録は id で持っているため、消しても
-再投稿はされません）。
+**投稿が終わった行も消さずに残してください。** 消しても再投稿はされません（投稿済みの記録は
+`state/posted.json` が id で持っています）が、Web アプリの「投稿済み」タブは本文をキューから
+引いているため、行を消すと履歴が「(本文はキューから削除されています)」になります。
 
 ## 4. セットアップ
 
@@ -351,6 +368,7 @@ PYTHONPATH=src python3 -m threads_bot post --dry-run     # 投稿せず内容だ
 PYTHONPATH=src python3 -m threads_bot post               # 予約時刻が来たものを 1 件投稿
 PYTHONPATH=src python3 -m threads_bot me                 # トークンの持ち主を確認
 PYTHONPATH=src python3 -m threads_bot limit              # 24 時間の投稿枠の残り
+PYTHONPATH=src python3 -m threads_bot refresh-token      # 長期トークンの期限を延ばす
 ```
 
 `pip install -e .` すれば `threads-bot post` の形でも実行できます。
@@ -382,7 +400,7 @@ push と PR で同じテストが「テスト」ワークフローとして走�
 ```
 docs/                          Web アプリ（GitHub Pages で配信）
   index.html / styles.css / app.js
-posts/queue.jsonl              投稿キュー
+posts/queue.jsonl              投稿キュー（投稿済みの行も履歴表示のために残す）
 state/posted.json              投稿済みの記録（自動更新。手で触らない）
 assets/images/                 Web アプリから添付した画像
 src/threads_bot/
@@ -394,7 +412,10 @@ src/threads_bot/
   cli.py                       コマンドライン
 scripts/commit_file.sh         変更のあったファイルのコミット（ワークフロー共通）
 scripts/compose.py             翌日ぶんの 3 本を作る
-scripts/notes.gs               ネタ帳の中継役（Google Apps Script に貼る）
+scripts/notes.gs               ネタ帳の中継役（Google Apps Script に貼る。いまは未使用）
+tests/                         ユニットテスト（test.yml が実行）
+.env.example                   手元で CLI を動かすときの環境変数の雛形
+pyproject.toml                 パッケージ定義（`pip install -e .` 用。依存ライブラリなし）
 .github/workflows/
   threads-post.yml             予約投稿（外部 cron から起動）
   threads-compose.yml          翌日ぶんの作成（外部 cron から起動）
@@ -402,3 +423,6 @@ scripts/notes.gs               ネタ帳の中継役（Google Apps Script に貼
   threads-refresh-token.yml    トークンの自動更新
   test.yml                     テスト
 ```
+
+`scripts/notes.gs` だけは現在どこからも呼ばれていません。「ネタの記録」を再開するときに
+そのまま使うため残しています。それ以外のファイルはすべて動いている経路の一部です。

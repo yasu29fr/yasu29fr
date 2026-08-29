@@ -1,8 +1,9 @@
 # 投稿キュー（JSON Lines）。1 行 1 投稿。`#` で始まる行と空行は無視されます。
 # 使えるフィールド:
 #   text            (必須) 本文。500 文字まで
+#   scheduled_at    (必須) 予約日時。例 "2026-09-01T09:00" (既定 Asia/Tokyo)
+#                          これが無い行は投稿されません（validate がエラーにします）
 #   id              (任意) 投稿の識別子。省略時は本文から自動生成
-#   scheduled_at    (任意) 予約日時。例 "2026-09-01T09:00" (既定 Asia/Tokyo)
 #   image_url       (任意) 公開 URL の画像。video_url とは併用不可
 #   video_url       (任意) 公開 URL の動画
 #   alt_text        (任意) 画像・動画の代替テキスト
@@ -11,7 +12,10 @@
 #   thread          (任意) 連投。1 件目への返信として順に投稿される
 #
 # 投稿したい内容を、この下に 1 行 1 投稿の JSON で書き足してください。
-# 例: {"text": "はじめての投稿。"}
+# 例: {"text": "はじめての投稿。", "scheduled_at": "2026-09-01T09:00"}
+#
+# 投稿が済んだ行は消さずに残してください。Web アプリの「投稿済み」タブは、
+# state/posted.json の記録とこの行の本文を突き合わせて履歴を表示します。
 {"id":"2026-08-27-rain","text":"石川・富山が大雨らしいけど、福井も降ってきましたね。"}
 {"id":"p-202608271111-inhy","text":"ClaudeでThereads投稿アプリできました。","scheduled_at":"2026-08-27T13:00:00+09:00","thread":["連投・予約・履歴も機能してます。"],"image_url":"https://raw.githubusercontent.com/yasu29fr/yasu29fr/refs/heads/claude/threads-auto-posting-uhiy6w/assets/images/202608271111-__________2026-08-27_11.09.29.png"}
 {"id":"p-202608271328-9f6x","text":"test","scheduled_at":"2026-08-27T13:40:00+09:00"}

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "threads-bot"
 version = "0.1.0"
-description = "Threads (threads.net) への自動投稿ボット。投稿キューを GitHub Actions の cron で消化する。"
+description = "Threads (threads.net) への自動投稿ボット。外部 cron が起動する GitHub Actions が投稿キューを消化する。"
 requires-python = ">=3.11"
 dependencies = []
 
