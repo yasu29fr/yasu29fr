@@ -29,7 +29,7 @@
 
   /** 画面の状態。queue.sha は書き込み時の衝突検出に使う。 */
   const app = {
-    cfg: { repo: "", branch: "", token: "", anthropicKey: "" },
+    cfg: { repo: "", branch: "", token: "", anthropicKey: "", notesUrl: "", notesSecret: "" },
     queue: { header: [], items: [], sha: null },
     posted: {},
     editingId: null,
@@ -60,6 +60,8 @@
       branch: stored.branch || "",
       token: stored.token || "",
       anthropicKey: stored.anthropicKey || "",
+      notesUrl: stored.notesUrl || "",
+      notesSecret: stored.notesSecret || "",
     };
   }
 
@@ -338,6 +340,67 @@
     });
 
     return { trigger, status, result };
+  }
+
+  // -------------------------------------------------------------- ネタの記録
+
+  /** 記録の見出しに使う日時。「2026-08-27 15:30」の形。 */
+  function noteStamp(date = new Date()) {
+    return toJstInputValue(date).replace("T", " ");
+  }
+
+  /**
+   * ネタ帳に 1 件書き足す。
+   *
+   * 送り先は Google Apps Script を Web アプリとして公開したもの。静的ページから
+   * Google ドキュメントへ直接書き込むことはできないため、そこを中継させている。
+   * Content-Type を text/plain にしているのは、事前確認の通信を発生させないため。
+   * application/json だと Apps Script 側が応答できず弾かれる。
+   */
+  async function postNote(text) {
+    const response = await fetch(app.cfg.notesUrl, {
+      method: "POST",
+      headers: { "content-type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ secret: app.cfg.notesSecret, text, at: noteStamp() }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`記録先が応答しません (HTTP ${response.status})`);
+    if (!data.ok) throw new Error(data.error || "記録できませんでした。");
+  }
+
+  async function onSaveNote() {
+    const text = el("n-text").value.trim();
+    if (!text) {
+      banner("記録する内容を書いてください。", "error");
+      return;
+    }
+    const button = el("save-note");
+    const status = el("note-status");
+    button.disabled = true;
+    status.textContent = "書き足しています…";
+    try {
+      await postNote(text);
+      el("n-text").value = "";
+      el("n-count").textContent = "0";
+      saveDraftSoon();
+      status.textContent = "";
+      banner(`${noteStamp()} のネタとして記録しました。`, "ok");
+    } catch (error) {
+      status.textContent = "";
+      // 失敗しても入力は残す。書いたものが消えるほうが困るため。
+      banner(`${error.message} 内容はこの画面に残しています。`, "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  /** 記録先が設定されているときだけ「記録」を出す。 */
+  function updateNotesVisibility() {
+    const ready = Boolean(app.cfg.notesUrl && app.cfg.notesSecret);
+    el("open-notes").hidden = !ready;
+    el("notes-unset").hidden = ready;
+    el("save-note").disabled = !ready;
+    if (!ready) el("notes").hidden = true;
   }
 
   // ------------------------------------------------------------ ネタを分ける
@@ -1045,6 +1108,7 @@
         imageUrl: (app.pendingImage && app.pendingImage.url) || "",
         hadImageFile: Boolean(app.pendingImage && app.pendingImage.file),
       },
+      note: el("n-text").value,
       splitter: {
         source: el("s-source").value,
         parts: el("s-parts").value,
@@ -1097,6 +1161,12 @@
       }
       updateEditIndicator();
       updateCounter();
+      restored = true;
+    }
+
+    if (draft.note) {
+      el("n-text").value = draft.note;
+      el("n-count").textContent = String(draft.note.length);
       restored = true;
     }
 
@@ -1171,6 +1241,8 @@
     el("cfg-branch").value = app.cfg.branch;
     el("cfg-token").value = app.cfg.token;
     el("cfg-anthropic").value = app.cfg.anthropicKey;
+    el("cfg-notes-url").value = app.cfg.notesUrl;
+    el("cfg-notes-secret").value = app.cfg.notesSecret;
     if (app.cfg.repo) {
       el("pat-link").href = "https://github.com/settings/personal-access-tokens/new";
     }
@@ -1210,6 +1282,21 @@
     loadSettings();
     fillSettingsForm();
 
+    el("open-notes").addEventListener("click", () => {
+      const notes = el("notes");
+      notes.hidden = !notes.hidden;
+      el("settings").hidden = true;
+      if (!notes.hidden) el("n-text").focus();
+    });
+    el("close-notes").addEventListener("click", () => {
+      el("notes").hidden = true;
+    });
+    el("save-note").addEventListener("click", onSaveNote);
+    el("n-text").addEventListener("input", () => {
+      el("n-count").textContent = String(el("n-text").value.length);
+      saveDraftSoon();
+    });
+
     el("open-settings").addEventListener("click", () => {
       el("settings").hidden = !el("settings").hidden;
     });
@@ -1219,18 +1306,23 @@
         branch: el("cfg-branch").value.trim(),
         token: el("cfg-token").value.trim(),
         anthropicKey: el("cfg-anthropic").value.trim(),
+        notesUrl: el("cfg-notes-url").value.trim(),
+        notesSecret: el("cfg-notes-secret").value.trim(),
       };
       saveSettings();
       updateProofreadVisibility();
+      updateNotesVisibility();
       await connect();
       fillSettingsForm();
     });
     el("clear-settings").addEventListener("click", () => {
       app.cfg.token = "";
       app.cfg.anthropicKey = "";
+      app.cfg.notesSecret = "";
       saveSettings();
       fillSettingsForm();
       updateProofreadVisibility();
+      updateNotesVisibility();
       connect();
       banner("トークンとキーをこのブラウザから消しました。", "ok");
     });
@@ -1275,6 +1367,7 @@
 
     setScheduledInput(defaultScheduledAt());
     updateProofreadVisibility();
+    updateNotesVisibility();
 
     // 書きかけの保存。入力・選択・タブ移動のたびに控える。
     for (const id of ["composer", "splitter", "split-result"]) {

@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>Threads 投稿予約</title>
-    <link rel="stylesheet" href="./styles.css?v=9" />
+    <link rel="stylesheet" href="./styles.css?v=10" />
   </head>
   <body>
     <header class="topbar">
       <h1>Threads 投稿予約</h1>
       <div class="topbar-actions">
         <span id="conn" class="badge badge-off">未接続</span>
+        <button id="open-notes" class="btn btn-ghost" type="button">記録</button>
         <button id="open-settings" class="btn btn-ghost" type="button">設定</button>
       </div>
     </header>
@@ -54,10 +55,45 @@
         で専用のキーを作り、<strong>利用上限を設定しておいてください</strong>。
         GitHub のトークンと違い、キー自体に使える範囲の制限がかけられません。
       </p>
+      <label>
+        ネタ帳の記録先 URL（任意）
+        <input id="cfg-notes-url" type="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" />
+      </label>
+      <label>
+        ネタ帳の合言葉
+        <input id="cfg-notes-secret" type="password" autocomplete="off" />
+      </label>
+      <p class="note">
+        Google Apps Script を Web アプリとして公開し、その URL を入れます。
+        合言葉はスクリプト側の <code>SECRET</code> と同じ文字列にしてください。
+        空のままなら「記録」ボタンは出ません。
+      </p>
+
       <div class="row">
         <button id="save-settings" class="btn btn-primary" type="button">保存して接続</button>
         <button id="clear-settings" class="btn btn-ghost" type="button">トークンを消す</button>
       </div>
+    </section>
+
+    <!-- ネタの記録 -->
+    <section id="notes" class="panel" hidden>
+      <h2>ネタを記録する</h2>
+      <p class="note">
+        思いついたこと、あったこと、引っかかっていること。整える必要はありません。
+        単語でも、言いかけでも構いません。日時は自動で付きます。
+      </p>
+      <label>
+        <textarea id="n-text" rows="6" placeholder="例: 現場で「これ自分でもできますか」と聞かれた。"></textarea>
+      </label>
+      <div class="counter"><span id="n-count">0</span> 文字</div>
+      <div class="row">
+        <button id="save-note" class="btn btn-primary" type="button">記録する</button>
+        <button id="close-notes" class="btn btn-ghost" type="button">閉じる</button>
+        <span id="note-status" class="note"></span>
+      </div>
+      <p id="notes-unset" class="note" hidden>
+        記録先が未設定です。設定の「ネタ帳の記録先」に、Google Apps Script の URL と合言葉を入れてください。
+      </p>
     </section>
 
     <nav class="tabs" role="tablist">
@@ -238,6 +274,6 @@
       <p id="history-empty" class="empty" hidden>まだ投稿はありません。</p>
     </section>
 
-    <script src="./app.js?v=9"></script>
+    <script src="./app.js?v=10"></script>
   </body>
 </html>
