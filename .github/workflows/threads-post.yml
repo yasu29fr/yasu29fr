@@ -10,7 +10,7 @@ on:
     types: [threads-tick]
   # schedule は保険として残す（発火すれば拾うが、当てにはしない）
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       limit:
