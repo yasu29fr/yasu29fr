@@ -176,6 +176,31 @@ Google ドキュメントの「ネタ帳」に書き足されます。投稿を�
 > 予約時刻のない項目は投稿されません。`threads-bot validate` がそうした項目を
 > エラーとして報告します（画面でも赤字で警告します）。
 
+### 翌日ぶんを自動で作る
+
+`Threads 翌日ぶんを作成` ワークフローが、運用ボードとネタ帳を材料に翌日の 3 本
+（6:00 / 12:00 / 20:00）を書き、キューに追加します。外部 cron から毎日 18:00 (JST) に
+`threads-compose` で起動します。
+
+すでに翌日ぶんがキューにあるときは何もしません。二重に入ることはありません。
+
+**必要な設定**
+
+| 場所 | 名前 | 中身 |
+| --- | --- | --- |
+| Secrets | `ANTHROPIC_API_KEY` | Anthropic の API キー |
+| Variables | `BOARD_DOC_ID` | 運用ボードの Google ドキュメント ID |
+| Variables | `NETA_DOC_ID` | ネタ帳の Google ドキュメント ID |
+| Variables | `ANTHROPIC_MODEL` | （任意）使うモデル。未指定なら自動で選ぶ |
+
+ドキュメント ID は秘密ではないので Variables に置きます
+（Settings → Secrets and variables → Actions → **Variables** タブ）。
+
+> **2 つのドキュメントは「リンクを知っている全員が閲覧可」にしてください。**
+> 認証なしの公開 URL から読むため、共有されていないと材料なしで書き始めてしまいます。
+> 初回は `workflow_dispatch` の `dry_run: true` で実行し、ログに
+> 「運用ボード: ◯◯ 文字を読み込みました」と出ることを確かめてください。
+
 ### 起動は外部の cron から行う
 
 **GitHub Actions の `schedule` は当てになりません。** このリポジトリでは一度も発火しませんでした
@@ -194,11 +219,12 @@ Google ドキュメントの「ネタ帳」に書き足されます。投稿を�
 
 [cron-job.org](https://console.cron-job.org/) などで、次の POST を登録します。
 
-登録するジョブは 1 つだけです。
+登録するジョブは 2 つです。
 
 | ジョブ | 間隔 | `event_type` |
 | --- | --- | --- |
 | 予約投稿の確認 | 10 分おき | `threads-tick` |
+| 翌日ぶんの作成 | 毎日 18:00 (JST) | `threads-compose` |
 
 設定:
 
@@ -360,10 +386,12 @@ src/threads_bot/
   state.py                     投稿済み記録の読み書き
   config.py                    環境変数の読み込み
   cli.py                       コマンドライン
-scripts/commit_state.sh        投稿済み記録のコミット（ワークフロー共通）
+scripts/commit_file.sh         変更のあったファイルのコミット（ワークフロー共通）
+scripts/compose.py             翌日ぶんの 3 本を作る
 scripts/notes.gs               ネタ帳の中継役（Google Apps Script に貼る）
 .github/workflows/
   threads-post.yml             予約投稿（外部 cron から起動）
+  threads-compose.yml          翌日ぶんの作成（外部 cron から起動）
   threads-check.yml            接続確認（手動）
   threads-refresh-token.yml    トークンの自動更新
   test.yml                     テスト
