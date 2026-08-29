@@ -395,7 +395,24 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 
 push と PR で同じテストが「テスト」ワークフローとして走ります。
 
-## 9. ファイル構成
+## 9. 他の人が同じものを作れるようにする
+
+`starter/` に配布用の一式を置いてあります。3 段階に分けてあり、第 1 段階
+（ブラウザから予約 → 自動投稿）だけで単体で完結します。
+
+渡す相手に伝えるのは 2 つだけです。
+
+1. GitHub で新しい public リポジトリを作る
+2. `starter/step1/PROMPT.md` の「--- ここから ---」以降を全文コピーして、
+   そのリポジトリを開いた Claude Code に貼る
+
+AI にコードを書かせず、完成品を `starter/step1/files/` に置いて「配置・検証・案内」だけを
+させる作りにしてあります。詳しくは [`starter/README.md`](starter/README.md) を見てください。
+
+> `starter/step1/files/` はこのリポジトリのコードのコピーです。本体を直したら
+> `./starter/sync.sh` を実行して取り込み直してください。
+
+## 10. ファイル構成
 
 ```
 docs/                          Web アプリ（GitHub Pages で配信）
@@ -413,6 +430,7 @@ src/threads_bot/
 scripts/commit_file.sh         変更のあったファイルのコミット（ワークフロー共通）
 scripts/compose.py             翌日ぶんの 3 本を作る
 scripts/notes.gs               ネタ帳の中継役（Google Apps Script に貼る。いまは未使用）
+starter/                       他の人に渡す再現キット（本体の動作には関係しない）
 tests/                         ユニットテスト（test.yml が実行）
 .env.example                   手元で CLI を動かすときの環境変数の雛形
 pyproject.toml                 パッケージ定義（`pip install -e .` 用。依存ライブラリなし）
