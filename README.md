@@ -192,9 +192,15 @@ Google ドキュメントの「ネタ帳」に書き足されます。投稿を�
 | Variables | `BOARD_DOC_ID` | 運用ボードの Google ドキュメント ID |
 | Variables | `NETA_DOC_ID` | ネタ帳の Google ドキュメント ID |
 | Variables | `ANTHROPIC_MODEL` | （任意）使うモデル。未指定なら自動で選ぶ |
+| Variables | `ANTHROPIC_WORKSPACE_ID` | identity-linked な API キーを使う場合は必須 |
 
 ドキュメント ID は秘密ではないので Variables に置きます
 （Settings → Secrets and variables → Actions → **Variables** タブ）。
+
+> **API キーの種類に注意。** identity-linked（個人ひも付き）のキーは、リクエストに
+> ワークスペース ID を添える必要があります。`400 anthropic-workspace-id is required`
+> が出たら、Variables に `ANTHROPIC_WORKSPACE_ID` を足すか、Console で通常の
+> API キーを作って Secrets を差し替えてください。
 
 > **2 つのドキュメントは「リンクを知っている全員が閲覧可」にしてください。**
 > 認証なしの公開 URL から読むため、共有されていないと材料なしで書き始めてしまいます。

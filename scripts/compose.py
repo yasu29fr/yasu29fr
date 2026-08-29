@@ -8,7 +8,8 @@ GitHub Actions から毎日 18:00 JST に起動される想定。
   - posts/queue.jsonl の直近の投稿（重複回避のため）
 
 必要な環境変数:
-  ANTHROPIC_API_KEY  必須。Anthropic の API キー
+  ANTHROPIC_API_KEY       必須。Anthropic の API キー
+  ANTHROPIC_WORKSPACE_ID  identity-linked なキーを使う場合は必須。ワークスペース ID
   BOARD_DOC_ID       任意。運用ボードの Google ドキュメント ID
   NETA_DOC_ID        任意。ネタ帳の Google ドキュメント ID
   ANTHROPIC_MODEL    任意。使うモデル。未指定なら利用可能なものから自動で選ぶ
@@ -78,11 +79,22 @@ def api_request(method: str, path: str, api_key: str, body: dict | None = None) 
     request.add_header("x-api-key", api_key)
     request.add_header("anthropic-version", API_VERSION)
     request.add_header("content-type", "application/json")
+    # identity-linked なキーは、どのワークスペースでの実行かを添える必要がある。
+    # 通常のキーでは不要なので、設定されているときだけ送る。
+    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    if workspace:
+        request.add_header("anthropic-workspace-id", workspace)
     try:
         with urllib.request.urlopen(request, timeout=180) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
+        if "anthropic-workspace-id" in detail:
+            fail(
+                "Anthropic の API キーが identity-linked のため、ワークスペース ID が要ります。"
+                " Variables に ANTHROPIC_WORKSPACE_ID を追加するか、"
+                " Console で通常の API キーを作り直して Secrets を差し替えてください。"
+            )
         fail(f"Anthropic API エラー ({exc.code}): {detail}")
     except Exception as exc:  # noqa: BLE001
         fail(f"Anthropic API に接続できませんでした: {exc}")
