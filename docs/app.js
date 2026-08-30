@@ -34,6 +34,7 @@
     posted: {},
     editingId: null,
     pendingImage: null, // { file, dataUrl }
+    writing: false, // 保存中。この間は自動の読み直しをしない
   };
 
   // ---------------------------------------------------------------- 設定
@@ -1045,21 +1046,32 @@
     });
   }
 
-  /** 通信中はボタンを止め、衝突は読み直しを促す。 */
+  /**
+   * 通信中はボタンを止め、失敗したら必ずサーバーの内容に戻す。
+   *
+   * 保存の前にローカルの items を先に書き換えているので、失敗したまま放置すると
+   * 画面だけが「消えた」状態になり、サーバーには残る。どのエラーでも読み直すのは
+   * そのため。衝突は自動で作り直さない。翌日ぶんの自動作成と競合したとき、
+   * 古い手元の内容で上書きすると、増えた投稿を消してしまうから。
+   */
   async function withBusy(message, work) {
     const submit = el("submit");
     submit.disabled = true;
+    app.writing = true;
     banner(message);
     try {
       await work();
     } catch (error) {
-      if (error.status === 409 || error.status === 422) {
-        banner("別の場所でキューが更新されていました。読み直します。", "error");
-        await reload().catch(() => {});
-      } else {
-        banner(error.message || "保存に失敗しました。", "error");
-      }
+      const conflict = error.status === 409 || error.status === 422;
+      await reload().catch(() => {});
+      banner(
+        conflict
+          ? "別の場所でキューが更新されていました。最新の内容に読み直したので、もう一度お試しください。"
+          : `${error.message || "保存に失敗しました。"} 最新の内容に読み直しました。`,
+        "error",
+      );
     } finally {
+      app.writing = false;
       submit.disabled = false;
     }
   }
@@ -1364,6 +1376,15 @@
     el("cancel-edit").addEventListener("click", stopEditing);
     el("cancel-edit-top").addEventListener("click", stopEditing);
     el("composer").addEventListener("submit", onSubmit);
+
+    // タブを開きっぱなしにしていると、翌日ぶんの自動作成が裏でキューを
+    // 書き換えていることがある。戻ってきた時点で読み直しておけば、
+    // 保存しようとして初めて衝突に気づく、ということが起きにくい。
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      if (!app.cfg.token || app.writing) return;
+      reload().catch(() => {});
+    });
 
     setScheduledInput(defaultScheduledAt());
     updateProofreadVisibility();
