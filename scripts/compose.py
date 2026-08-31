@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import random
 import string
 import sys
@@ -265,36 +266,85 @@ def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled
         "- text も thread も 500 字を超えないこと",
         "",
         "## 出力形式",
-        "次の形の JSON だけを返してください。前後に説明や```を付けないこと。",
-        '{"posts": [{"hour": <時>, "text": "本文", "thread": ["続き"], "note": "使った柱と型とネタ"}]}',
-        f"posts には {hours} のぶんだけを、この順で入れてください。",
+        "JSON では返さないでください。次の形式のテキストだけを返します。",
+        "前後に説明や ``` を付けないこと。",
+        "",
+        "@@@POST",
+        "HOUR: 6",
+        "NOTE: 使った柱と型とネタ",
+        "TEXT:",
+        "本文をここに書く。改行や空行はそのまま書いてよい。",
+        "THREAD:",
+        "連投の 1 件目。改行や空行はそのまま書いてよい。",
+        "THREAD:",
+        "連投の 2 件目。無ければこの 2 行ごと省く。",
+        "@@@END",
+        "",
+        f"{hours} のぶんを、この順に @@@POST 〜 @@@END の組で並べてください。",
+        "HOUR には 6 / 12 / 20 のいずれかの数字だけを書きます。",
     ]
     return "\n".join(sections)
 
 
-def generate(api_key: str, model: str, prompt: str, expected: int) -> list[dict]:
+def parse_posts(text: str) -> list[dict]:
+    """@@@POST 〜 @@@END の組を読み取る。
+
+    JSON をやめたのは、本文に改行と空行が入るため。モデルが改行をそのまま書くと
+    JSON として壊れ、投稿が 1 本も作られない日が出た。区切り記号なら改行は素通りする。
+    """
+    posts = []
+    for body in re.findall(r"@@@POST[ \t]*\n(.*?)\n?@@@END", text, re.S):
+        item = {"hour": None, "note": "", "text": "", "thread": []}
+        tokens = re.split(r"^(HOUR:|NOTE:|TEXT:|THREAD:)", body, flags=re.M)
+        for key, value in zip(tokens[1::2], tokens[2::2]):
+            value = value.strip()
+            if key == "HOUR:":
+                digits = re.sub(r"\D", "", value)
+                item["hour"] = int(digits) if digits else None
+            elif key == "NOTE:":
+                item["note"] = value
+            elif key == "TEXT:":
+                item["text"] = value
+            elif key == "THREAD:" and value:
+                item["thread"].append(value)
+        if item["hour"] is not None and item["text"]:
+            posts.append(item)
+    return posts
+
+
+def ask(api_key: str, model: str, prompt: str) -> str:
     payload = api_request(
         "POST",
         "/messages",
         api_key,
         {
             "model": model,
-            "max_tokens": 4000,
+            "max_tokens": 8000,
             "messages": [{"role": "user", "content": prompt}],
         },
     )
-    text = "".join(
+    return "".join(
         block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text"
     ).strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1].rsplit("```", 1)[0]
-    try:
-        posts = json.loads(text)["posts"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        fail(f"生成結果を JSON として読めませんでした: {exc}\n--- 生の出力 ---\n{text[:1000]}")
-    if len(posts) != expected:
-        fail(f"{expected} 本返るはずが {len(posts)} 本でした。")
-    return posts
+
+
+def generate(api_key: str, model: str, prompt: str, expected: int) -> list[dict]:
+    """1 度目で本数が揃わなければ、形式を念押しして 1 度だけやり直す。"""
+    reminder = (
+        "\n\n---\n直前の返答は形式が守られていませんでした。"
+        "説明や ``` を付けず、@@@POST 〜 @@@END の組だけを返してください。"
+    )
+    for attempt in (1, 2):
+        text = ask(api_key, model, prompt if attempt == 1 else prompt + reminder)
+        posts = parse_posts(text)
+        if len(posts) == expected:
+            return posts
+        print(f"::warning::{attempt} 回目: {expected} 本のはずが {len(posts)} 本でした。")
+        if attempt == 2:
+            fail(
+                f"{expected} 本を作れませんでした（2 回試行）。\n--- 生の出力 ---\n{text[:1200]}"
+            )
+    return []
 
 
 def new_id(hour: int, existing: set[str]) -> str:
