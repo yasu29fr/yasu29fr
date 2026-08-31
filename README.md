@@ -397,23 +397,17 @@ push と PR で同じテストが「テスト」ワークフローとして走�
 
 ## 9. 他の人が同じものを作れるようにする
 
-`starter/` に配布用の一式を置いてあります。3 段階に分けてあり、第 1 段階
-（ブラウザから予約 → 自動投稿）だけで単体で完結します。
-
-渡すのは **`starter/step1/threads-bot-step1.zip`（52KB）** と、
-[`starter/step1/README.md`](starter/step1/README.md) の内容だけです。
-受け取った人がやることは 3 つ。
-
-1. GitHub で新しい public リポジトリを作る
-2. ZIP を**展開せずに** 1 ファイルだけアップロードする
-3. `starter/step1/PROMPT.md` の「--- ここから ---」以降を全文コピーして、
-   そのリポジトリを開いた Claude Code に貼る
+配布用の一式は、別の非公開リポジトリ **`yasu29fr/threads-bot-kit`** に移しました。
+3 段階に分けてあり、第 1 段階（ブラウザから予約 → 自動投稿）だけで単体で完結します。
 
 AI にコードを書かせず、完成品を ZIP で渡して「展開・検証・案内」だけをさせる作りに
-してあります。詳しくは [`starter/README.md`](starter/README.md) を見てください。
+してあります。渡し方と手引きは、そちらの `README.md` を見てください。
 
-> `starter/step1/files/` はこのリポジトリのコードのコピーです。本体を直したら
-> `./starter/sync.sh` を実行してください。取り込み直したうえで ZIP も作り直します。
+> **このリポジトリは public です。** 配布物をここに置くと、履歴ごと誰でも取得できる
+> 状態になります。そのため配布用の一式は非公開側にだけ置き、こちらには戻しません。
+
+> 配布物に含めるコードは、このリポジトリのコピーです。本体を直したときは、
+> `threads-bot-kit` 側の `sync.sh` を実行して取り込み直してください。
 
 ## 10. ファイル構成
 
@@ -433,7 +427,6 @@ src/threads_bot/
 scripts/commit_file.sh         変更のあったファイルのコミット（ワークフロー共通）
 scripts/compose.py             翌日ぶんの 3 本を作る
 scripts/notes.gs               ネタ帳の中継役（Google Apps Script に貼る。いまは未使用）
-starter/                       他の人に渡す再現キット（本体の動作には関係しない）
 tests/                         ユニットテスト（test.yml が実行）
 .env.example                   手元で CLI を動かすときの環境変数の雛形
 pyproject.toml                 パッケージ定義（`pip install -e .` 用。依存ライブラリなし）
