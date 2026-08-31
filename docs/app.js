@@ -1260,33 +1260,54 @@
     }
   }
 
+  /**
+   * 接続状態の見せ方。
+   *
+   * つながっているときは設定ボタンの緑の点だけにする。接続先は毎回読むもの
+   * ではないので、設定パネルの中に置く。つながっていないときだけ、上部に
+   * 帯を出して知らせる。異常のときにだけ目立てばよい。
+   */
+  function showConnection(state, message) {
+    el("conn-dot").hidden = state !== "ok";
+    const alert = el("conn-alert");
+    alert.hidden = state === "ok";
+    if (state !== "ok") el("conn-alert-text").textContent = message;
+
+    const detail = el("conn-detail");
+    detail.hidden = state !== "ok";
+    if (state === "ok") {
+      detail.innerHTML = "";
+      detail.append("接続先 ");
+      const b = document.createElement("b");
+      b.textContent = "接続中";
+      const where = document.createElement("span");
+      where.className = "mono";
+      where.textContent = `${app.cfg.repo} @ ${app.cfg.branch}`;
+      detail.append(b, document.createElement("br"), where);
+    }
+  }
+
   async function connect() {
     if (!app.cfg.repo || !app.cfg.token) {
-      el("conn").textContent = "未接続";
-      el("conn").className = "badge badge-off";
+      showConnection("off", "まだ接続していません。設定で GitHub のトークンを登録してください。");
       el("settings").hidden = false;
       return;
     }
     try {
       const repo = await gh(`/repos/${app.cfg.repo}`);
       if (!app.cfg.branch) app.cfg.branch = repo.default_branch;
-      const conn = el("conn");
-      conn.textContent = `${app.cfg.repo.split("/").pop()} @ ${app.cfg.branch}`;
-      conn.title = `${app.cfg.repo} @ ${app.cfg.branch}`;
-      conn.className = "badge badge-on";
+      showConnection("ok");
       el("settings").hidden = true;
       await reload();
       banner("", null);
     } catch (error) {
-      el("conn").textContent = "接続できません";
-      el("conn").className = "badge badge-off";
-      el("settings").hidden = false;
-      banner(
-        error.status === 401 || error.status === 403
-          ? "トークンが無効か、権限が足りません（Contents: Read and write が必要です）。"
-          : error.message,
+      showConnection(
         "error",
+        error.status === 401 || error.status === 403
+          ? "トークンが無効か、権限が足りません。Contents: Read and write が必要です。"
+          : `接続できません。${error.message}`,
       );
+      el("settings").hidden = false;
     }
   }
 
@@ -1311,6 +1332,10 @@
 
     el("open-settings").addEventListener("click", () => {
       el("settings").hidden = !el("settings").hidden;
+    });
+    el("conn-alert-open").addEventListener("click", () => {
+      el("settings").hidden = false;
+      el("cfg-token").focus();
     });
     el("save-settings").addEventListener("click", async () => {
       app.cfg = {

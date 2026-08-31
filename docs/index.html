@@ -5,23 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>Threads 投稿予約</title>
-    <link rel="stylesheet" href="./styles.css?v=12" />
+    <link rel="stylesheet" href="./styles.css?v=14" />
   </head>
   <body>
     <header class="topbar">
       <h1>Threads 投稿予約</h1>
       <div class="topbar-actions">
-        <span id="conn" class="badge badge-off">未接続</span>
-        <button id="open-notes" class="btn btn-ghost" type="button">記録</button>
-        <button id="open-settings" class="btn btn-ghost" type="button">設定</button>
+        <button id="open-notes" class="icon-btn" type="button" title="ネタを記録する">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h11l5 5v11a0 0 0 0 1 0 0H4z"/><path d="M15 4v5h5"/><path d="M8 13h8M8 17h5"/></svg>
+          <span class="icon-btn-label">記録</span>
+        </button>
+        <button id="open-settings" class="icon-btn" type="button" title="接続設定">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+          <span class="icon-btn-label">設定</span>
+          <span id="conn-dot" class="conn-dot" aria-hidden="true"></span>
+        </button>
       </div>
     </header>
+
+    <!-- 接続できていないときだけ出す。正常時は何も出さない。 -->
+    <div id="conn-alert" class="conn-alert" role="status" hidden>
+      <span id="conn-alert-text"></span>
+      <button id="conn-alert-open" class="btn btn-primary" type="button">設定を開く</button>
+    </div>
 
     <div id="banner" class="banner" hidden></div>
 
     <!-- 設定 -->
     <section id="settings" class="panel" hidden>
       <h2>接続設定</h2>
+      <p id="conn-detail" class="conn-detail" hidden></p>
       <p class="note">
         GitHub の Personal Access Token を使って、このリポジトリの投稿キューを読み書きします。
         トークンは<strong>このブラウザの中だけ</strong>に保存され、どこにも送信されません
@@ -274,6 +287,6 @@
       <p id="history-empty" class="empty" hidden>まだ投稿はありません。</p>
     </section>
 
-    <script src="./app.js?v=12"></script>
+    <script src="./app.js?v=14"></script>
   </body>
 </html>
