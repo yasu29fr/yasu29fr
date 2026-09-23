@@ -32,6 +32,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import 商品
+
 JST = ZoneInfo("Asia/Tokyo")
 QUEUE_PATH = Path("posts/queue.jsonl")
 API_BASE = "https://api.anthropic.com/v1"
@@ -93,7 +95,7 @@ POLICY_ACCOUNT = """### この出来事を見るときに通す質問
 - **いま話題になっているもの**（トレンド）
 - **福井のおでかけ情報**（17:00 の枠）
 - 自分が作った「ミテカラ」の紹介（これは 12:30 の専用枠で出すので、通常枠では扱わない）
-- 道具の紹介（アフィリエイト）は、火・金の 6:00 だけ。【PR】表記を付ける。
+- 道具の紹介（アフィリエイト）は、毎日 6:00 の枠だけ。【PR】表記を付ける。
   他の枠では商品名を出した紹介をしない
 
 **使っていないものを「使った」と書かないこと。** ここがいちばん危ないところです。
@@ -159,28 +161,18 @@ SLOTS = [
 MODEL_PREFERENCE = ("opus", "sonnet", "haiku")
 
 
-# 紹介（アフィリエイト）を入れてよい枠。
+# 紹介（アフィリエイト）を入れてよい枠。毎日 1 本。
 #
 # 12:00 を使っていないのは、12:30 にミテカラ LP の枠が毎日入っているため。
-# 30 分ちがいで宣伝が 2 本並ぶのを避ける。
-# 週 2 回（火・金）に絞っているのは、このアカウントが 12:30 の LP と
-# 20:00 の note で、すでに 2 つ誘導を持っているため。
-# 増やすときは、まずこの 2 曜日の数字を見てから決める。
+# 30 分ちがいで宣伝が 2 本並ぶのを避けて、朝いちばんに置いている。
 PR_HOUR = 6
-PR_WEEKDAYS = (1, 4)  # 0=月曜。1=火、4=金
 
 
-# ネタ帳の「## 紹介する商品」に書かれた行を読み取る。
-#
-#   - 商品名 | https://... | 一言メモ
-#
-# URL は AI に渡さず、ここで読んだ文字列をそのまま投稿に入れる。
+# 紹介する商品は scripts/商品.py が選ぶ。リストは X のリポジトリの
+# neta/商品.jsonl ただ 1 つで、X も yu も同じものを読む。
+# 選び方は日付から計算するので、同じ日なら両方のアカウントで同じ商品になる。
+# URL は AI に渡さず、リストにある文字列をそのまま投稿に入れる。
 # AI に URL を書かせると、1 文字変わっただけで別の場所へ飛ぶため。
-# 見出しは「紹介」と「商品」が同じ行にあれば、その節として扱う。
-PRODUCT_SECTION = re.compile(
-    r"^[#\s]*(?=[^\n]*紹介)(?=[^\n]*商品)[^\n]*$(.*?)(?=^##\s|\Z)", re.M | re.S
-)
-PRODUCT_LINE = re.compile(r"^\s*[-・]\s*(.+?)\s*\|\s*(https?://\S+)\s*(?:\|\s*(.*))?$")
 
 PR_MARKERS = ("【PR】", "#PR", "＃PR", "[PR]")
 
@@ -188,7 +180,7 @@ URL_IN_TEXT = re.compile(r"https?://\S+")
 
 # 楽天の検索で入れた商品には、メモの先頭に「[未使用]」が付く
 # （scripts/商品を取る.mjs）。本人が使ったことのある商品と書き分けるための印。
-UNUSED_MARK = "[未使用]"
+UNUSED_MARK = 商品.未使用の印
 
 # 未使用の商品でこれが出たら止める。検索で見つけただけの道具に
 # 「使っている」と書かせると、それはただの嘘になる。
@@ -216,42 +208,6 @@ def product_rules(product: dict) -> list[str]:
             "未使用だと分かる形で書いてください",
         ]
     return ["4. スペックの列挙にしない。実際に使ってどうだったかを書く"]
-
-
-def parse_products(neta: str) -> list[dict]:
-    """ネタ帳から紹介候補の商品を読み取る。
-
-    見出しにマッチする節が複数あることがあるので、**すべての節**を見る。
-    最初の 1 つだけを見ると、後ろの節の商品が黙って無視される。
-    """
-    products = []
-    for section in PRODUCT_SECTION.finditer(neta or ""):
-        for line in section.group(1).splitlines():
-            matched = PRODUCT_LINE.match(line)
-            if matched:
-                products.append(
-                    {
-                        "name": matched.group(1).strip(),
-                        "url": matched.group(2).strip(),
-                        "memo": (matched.group(3) or "").strip(),
-                    }
-                )
-    return products
-
-
-def pick_product(products: list[dict], entries: list[dict]) -> dict | None:
-    """まだ紹介していない商品を 1 つ選ぶ。"""
-    used = set()
-    for entry in entries:
-        for part in [entry.get("text", ""), *(entry.get("thread") or [])]:
-            for url in URL_IN_TEXT.findall(part or ""):
-                used.add(url)
-    for product in products:
-        if product["url"] not in used:
-            return product
-    return None
-
-
 
 
 LEARNINGS_PATH = Path("insights/learnings.md")
@@ -795,26 +751,32 @@ def main() -> None:
     board = fetch_doc(os.environ.get("BOARD_DOC_ID", "").strip(), "運用ボード")
     neta = read_neta()
 
-    # 紹介枠。ネタ帳に商品があって、その枠が空いていて、
-    # かつ対象日が火・金のときだけ立つ。1 日 1 本まで。
-    products = parse_products(neta)
+    # 紹介枠。毎日 1 本、PR_HOUR の枠だけ。
+    # どの商品を出すかは scripts/商品.py が日付から決める。
+    # X と yu は同じリスト・同じ計算なので、同じ日には同じ商品になる。
+    一覧 = 商品.読む()
     product = None
-    pr_day = target_date.weekday() in PR_WEEKDAYS
-    if products and pr_day and any(hour == PR_HOUR for hour, *_ in needed):
-        product = pick_product(products, entries)
-        if product:
-            print(f"紹介枠: {PR_HOUR}:00 ｜ {product['name']}")
-        else:
+    if 一覧 and any(hour == PR_HOUR for hour, *_ in needed):
+        選んだ = 商品.今日の商品(target_date, 一覧)
+        if 選んだ:
+            product = 商品.投稿用にする(選んだ)
+            並び = 商品.並び(一覧)
             print(
-                "::warning::紹介する商品の在庫が切れています"
-                f"（登録 {len(products)} 件はすべて紹介済み）。"
-                "ネタ帳の「紹介する商品」に足すまで、紹介枠は通常の投稿になります。"
+                f"紹介枠: {PR_HOUR}:00 ｜ {product['name']}"
+                f"（{len(一覧)} 件中／並びの長さ {len(並び)}）"
             )
-    elif products and not pr_day:
-        曜日 = "月火水木金土日"[target_date.weekday()]
-        print(f"紹介枠: {曜日}曜日は紹介の日ではないため、今回は紹介しません（火・金のみ）。")
-    elif products:
+            成績 = 選んだ.get("成績") or {}
+            if 成績:
+                print(
+                    f"  これまで {成績.get('本数')} 本・平均閲覧 {成績.get('平均閲覧')}"
+                    f"・平均反応 {成績.get('平均反応')}"
+                )
+            if 選んだ.get("セール"):
+                print("  セール中のため、並びに多く入っています。")
+    elif 一覧:
         print(f"紹介枠: {PR_HOUR}:00 はすでに埋まっているため、今回は紹介しません。")
+    else:
+        print("::warning::商品リストが空です。紹介枠は通常の投稿になります。")
 
     model = pick_model(api_key)
     prompt = build_prompt(
