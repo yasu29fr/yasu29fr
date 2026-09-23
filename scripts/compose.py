@@ -93,6 +93,8 @@ POLICY_ACCOUNT = """### この出来事を見るときに通す質問
 - **いま話題になっているもの**（トレンド）
 - **福井のおでかけ情報**（17:00 の枠）
 - 自分が作った「ミテカラ」の紹介（これは 12:30 の専用枠で出すので、通常枠では扱わない）
+- 道具の紹介（アフィリエイト）は、火・金の 6:00 だけ。【PR】表記を付ける。
+  他の枠では商品名を出した紹介をしない
 
 **使っていないものを「使った」と書かないこと。** ここがいちばん危ないところです。
 人の紹介で知ったツールは「気になっています」「まだ試していません」と書く。
@@ -155,6 +157,101 @@ SLOTS = [
 
 # 未指定のときに上から順に探すモデル
 MODEL_PREFERENCE = ("opus", "sonnet", "haiku")
+
+
+# 紹介（アフィリエイト）を入れてよい枠。
+#
+# 12:00 を使っていないのは、12:30 にミテカラ LP の枠が毎日入っているため。
+# 30 分ちがいで宣伝が 2 本並ぶのを避ける。
+# 週 2 回（火・金）に絞っているのは、このアカウントが 12:30 の LP と
+# 20:00 の note で、すでに 2 つ誘導を持っているため。
+# 増やすときは、まずこの 2 曜日の数字を見てから決める。
+PR_HOUR = 6
+PR_WEEKDAYS = (1, 4)  # 0=月曜。1=火、4=金
+
+
+# ネタ帳の「## 紹介する商品」に書かれた行を読み取る。
+#
+#   - 商品名 | https://... | 一言メモ
+#
+# URL は AI に渡さず、ここで読んだ文字列をそのまま投稿に入れる。
+# AI に URL を書かせると、1 文字変わっただけで別の場所へ飛ぶため。
+# 見出しは「紹介」と「商品」が同じ行にあれば、その節として扱う。
+PRODUCT_SECTION = re.compile(
+    r"^[#\s]*(?=[^\n]*紹介)(?=[^\n]*商品)[^\n]*$(.*?)(?=^##\s|\Z)", re.M | re.S
+)
+PRODUCT_LINE = re.compile(r"^\s*[-・]\s*(.+?)\s*\|\s*(https?://\S+)\s*(?:\|\s*(.*))?$")
+
+PR_MARKERS = ("【PR】", "#PR", "＃PR", "[PR]")
+
+URL_IN_TEXT = re.compile(r"https?://\S+")
+
+# 楽天の検索で入れた商品には、メモの先頭に「[未使用]」が付く
+# （scripts/商品を取る.mjs）。本人が使ったことのある商品と書き分けるための印。
+UNUSED_MARK = "[未使用]"
+
+# 未使用の商品でこれが出たら止める。検索で見つけただけの道具に
+# 「使っている」と書かせると、それはただの嘘になる。
+# このアカウントの方針「使っていないものを『使った』と書かない」を機械で守る。
+USED_VOICE = re.compile(
+    r"使って(み|い)|使った|使ってる|愛用|買ってよかった|買って良かった|"
+    r"届いた|試した|試してみ|導入して|乗り換え(た|て)|手放せ|使い始め"
+)
+
+
+def is_unused(product: dict | None) -> bool:
+    """本人がまだ使っていない商品か。"""
+    return bool(product) and UNUSED_MARK in (product.get("memo") or "")
+
+
+def product_rules(product: dict) -> list[str]:
+    """商品の出どころで 4 番目の決まりを差し替える。"""
+    if is_unused(product):
+        return [
+            "4. **この商品を、本人はまだ使っていません。**",
+            "   「使っている」「使ってみた」「買ってよかった」「愛用」は書かないこと。",
+            "   書けるのは、何をする道具か・どんな場面で要るか・どんな人に向くか、",
+            "   そして **自分はまだ試していない** ということだけです。",
+            "   「気になっています」「まだ試していません」のように、"
+            "未使用だと分かる形で書いてください",
+        ]
+    return ["4. スペックの列挙にしない。実際に使ってどうだったかを書く"]
+
+
+def parse_products(neta: str) -> list[dict]:
+    """ネタ帳から紹介候補の商品を読み取る。
+
+    見出しにマッチする節が複数あることがあるので、**すべての節**を見る。
+    最初の 1 つだけを見ると、後ろの節の商品が黙って無視される。
+    """
+    products = []
+    for section in PRODUCT_SECTION.finditer(neta or ""):
+        for line in section.group(1).splitlines():
+            matched = PRODUCT_LINE.match(line)
+            if matched:
+                products.append(
+                    {
+                        "name": matched.group(1).strip(),
+                        "url": matched.group(2).strip(),
+                        "memo": (matched.group(3) or "").strip(),
+                    }
+                )
+    return products
+
+
+def pick_product(products: list[dict], entries: list[dict]) -> dict | None:
+    """まだ紹介していない商品を 1 つ選ぶ。"""
+    used = set()
+    for entry in entries:
+        for part in [entry.get("text", ""), *(entry.get("thread") or [])]:
+            for url in URL_IN_TEXT.findall(part or ""):
+                used.add(url)
+    for product in products:
+        if product["url"] not in used:
+            return product
+    return None
+
+
 
 
 LEARNINGS_PATH = Path("insights/learnings.md")
@@ -333,7 +430,16 @@ def describe_filled(filled: dict[int, dict]) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled) -> str:
+def build_prompt(
+    board: str,
+    neta: str,
+    recent: str,
+    target_date,
+    needed,
+    filled,
+    product: dict | None = None,
+    pr_hour: int | None = None,
+) -> str:
     slot_lines = "\n".join(
         f"- {hour}:00 ｜ 深さ: {DEPTH.get(hour, 'B')} ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
         for hour, pillar, form, aim in needed
@@ -377,6 +483,42 @@ def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled
             "これらとネタ・切り口・書き出しが重ならないようにしてください。",
             "文体もこれらに寄せてください。",
             already,
+            "",
+        ]
+    if product and pr_hour is not None:
+        sections += [
+            f"## {pr_hour}:00 の枠だけ、商品の紹介です",
+            "",
+            f"紹介する商品: {product['name']}",
+            f"本人のメモ: {product['memo'] or '（なし）'}",
+            "",
+            "この枠の書き方には、守っていただく決まりがあります。",
+            "",
+            "1. **本文の冒頭を必ず「【PR】」で始める。** 末尾ではなく先頭です（ステマ規制）",
+            "2. **URL は絶対に書かない。** リンクはこちらで別に付けます。",
+            "   「詳細はこちら」のような誘導文も本文に入れないこと",
+            "3. 本人のメモに書かれている範囲のことだけを書く。",
+            "   確かめていない良さを足さないこと",
+            *product_rules(product),
+            "5. 「買うべき」「おすすめです」と言い切らない。判断は読む人に任せる",
+            "6. 合わない人・向かない場面にも一言触れる。良いことだけ並べない",
+            "",
+            "本文は【PR】を含めて日本語 60〜120 字。**THREAD は書かないでください。**",
+            "（リンクだけの連投をこちらで 1 件付けます）",
+            "",
+        ]
+    if not product:
+        sections += [
+            "## 今日は商品の紹介をしません",
+            "",
+            "紹介できる商品が用意されていません。**どの枠でも商品紹介を書かないでください。**",
+            "",
+            "- 本文を「【PR】」「#PR」「[PR]」で始めない",
+            "- 特定の商品名を出して、良さを伝える書き方をしない",
+            "- 購入をすすめる書き方をしない",
+            "",
+            "材料に商品の情報があっても、今日は使いません。",
+            "道具の話をする場合は、**商品名を出さずに**、やり方や気づきとして書いてください。",
             "",
         ]
     sections += [
@@ -653,8 +795,38 @@ def main() -> None:
     board = fetch_doc(os.environ.get("BOARD_DOC_ID", "").strip(), "運用ボード")
     neta = read_neta()
 
+    # 紹介枠。ネタ帳に商品があって、その枠が空いていて、
+    # かつ対象日が火・金のときだけ立つ。1 日 1 本まで。
+    products = parse_products(neta)
+    product = None
+    pr_day = target_date.weekday() in PR_WEEKDAYS
+    if products and pr_day and any(hour == PR_HOUR for hour, *_ in needed):
+        product = pick_product(products, entries)
+        if product:
+            print(f"紹介枠: {PR_HOUR}:00 ｜ {product['name']}")
+        else:
+            print(
+                "::warning::紹介する商品の在庫が切れています"
+                f"（登録 {len(products)} 件はすべて紹介済み）。"
+                "ネタ帳の「紹介する商品」に足すまで、紹介枠は通常の投稿になります。"
+            )
+    elif products and not pr_day:
+        曜日 = "月火水木金土日"[target_date.weekday()]
+        print(f"紹介枠: {曜日}曜日は紹介の日ではないため、今回は紹介しません（火・金のみ）。")
+    elif products:
+        print(f"紹介枠: {PR_HOUR}:00 はすでに埋まっているため、今回は紹介しません。")
+
     model = pick_model(api_key)
-    prompt = build_prompt(board, neta, recent_texts(entries), target_date, needed, filled)
+    prompt = build_prompt(
+        board,
+        neta,
+        recent_texts(entries),
+        target_date,
+        needed,
+        filled,
+        product=product,
+        pr_hour=PR_HOUR if product else None,
+    )
     posts = generate(api_key, model, prompt, len(needed))
 
     by_hour = {int(p["hour"]): p for p in posts}
@@ -667,6 +839,37 @@ def main() -> None:
         if not text:
             fail(f"{hour}:00 の本文が空です。")
         thread = [t.strip() for t in (post.get("thread") or []) if t and t.strip()]
+
+        if not product and text.startswith(PR_MARKERS):
+            # 紹介枠が立っていないのに PR 投稿が作られた。
+            # リンクが付かないので成果にならず、表示だけが残る。
+            fail(
+                f"{hour}:00 が【PR】で始まっていますが、紹介できる商品がありません"
+                f"（先頭 30 字: {text[:30]!r}）。"
+                "ネタ帳の「紹介する商品」に、まだ紹介していない商品を足してください。"
+            )
+
+        if product and hour == PR_HOUR:
+            # 本文に URL が紛れ込んでいたら止める。AI に URL を書かせない方針のため。
+            if URL_IN_TEXT.search(text):
+                fail(f"{hour}:00 の本文に URL が入っています。この枠では本文にリンクを書きません。")
+            if not text.startswith(PR_MARKERS):
+                fail(
+                    f"{hour}:00 の本文が【PR】で始まっていません（先頭 20 字: {text[:20]!r}）。"
+                    "ステマ規制のため、冒頭の表記は必須です。"
+                )
+            # 楽天の検索で入れた商品に「使っている」と書かせない。
+            if is_unused(product):
+                found = USED_VOICE.search(text)
+                if found:
+                    fail(
+                        f"{hour}:00 の本文に「{found.group(0)}」が入っています。"
+                        f"この商品（{product['name']}）は本人がまだ使っていません。"
+                        "使った体で書くと嘘になるので、未使用だと分かる書き方にしてください。"
+                    )
+            # リンクはネタ帳に書かれた文字列をそのまま使う。AI を通さない。
+            thread = [f"【PR】{product['name']}\n{product['url']}"]
+
         for part in [text, *thread]:
             if len(part) > 500:
                 fail(f"{hour}:00 に 500 字を超える要素があります（{len(part)} 字）。")
