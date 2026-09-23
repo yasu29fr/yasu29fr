@@ -142,7 +142,9 @@ async function 探す(キーワード) {
       const data = await res.json();
       return (data.Items ?? []).map((w) => w.Item ?? w).filter(Boolean);
     }
-    最後 = `HTTP ${res.status} ${(await res.text()).slice(0, 160)}`;
+    // 改行を潰す。GitHub の注釈は最初の1行しか出さないので、
+    // 改行のままだと 403 の理由が見えない。
+    最後 = `HTTP ${res.status} ${(await res.text()).replace(/\s+/g, ' ').slice(0, 300)}`;
     if (res.status === 429) await new Promise((r) => setTimeout(r, 2000 * 回));
     else break;
   }
