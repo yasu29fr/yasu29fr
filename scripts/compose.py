@@ -657,6 +657,19 @@ def build_prompt(
         f"{hours} のぶんを、この順に @@@POST 〜 @@@END の組で並べてください。",
         "HOUR には 6 / 12 / 20 のいずれかの数字だけを書きます。",
     ]
+    sections += [
+        "## 本文の末尾（2026-09-25 代表指示）",
+        "",
+        *[
+            f"**{h}:00 の枠だけ、本文のいちばん最後に、1行あけて「{検索語}」と置いてください。**"
+            for h in 検索語の枠
+            if any(hour == h for hour, *_ in needed)
+        ],
+        "Threads の検索で引っかかるようにするためです。ハッシュタグにはしません。",
+        "書き忘れてもこちらで足しますが、文の流れを見て置いてもらえると自然になります。",
+        "他の枠には付けません（福井の話題ではないため）。",
+        "",
+    ]
     if mugi and hotel_hour is not None:
         sections += [
             f"## {hotel_hour}:00 の枠は、クーポンのお知らせです（楽天トラベル・PR）",
@@ -826,6 +839,12 @@ def source_urls(text: str, thread: list[str]) -> set[str]:
 # どの宿をどの切り口で出すかは scripts/宿.py が日付から決める。
 # 3アカウントとも同じリスト・同じ計算なので、同じ日には同じ内容になる。
 DEAL_HOUR = 21
+
+# 本文の末尾に必ず入れる語（2026-09-25 代表指示）。
+# Threads の検索で引っかかるようにするため。
+# yu は福井の話題を扱う枠だけに付ける（Instagram運用・動画編集の枠には合わない）。
+検索語 = "福井イベント"
+検索語の枠 = (17,)
 
 # 1本のまとめに何軒並べるか。
 宿の軒数 = 7
@@ -1256,6 +1275,10 @@ def main() -> None:
             text = (post.get("text") or "").strip()
             if not text:
                 落とす(f"{hour}:00 の本文が空です。")
+            # 検索で引っかかるように、本文の最後に語を足す。
+            # AI が自分で書いていたら二重にしない。
+            if hour in 検索語の枠 and 検索語 not in text:
+                text = text.rstrip() + "\n\n" + 検索語
             thread = [t.strip() for t in (post.get("thread") or []) if t and t.strip()]
 
             if not product and not hotel and not deal and text.startswith(PR_MARKERS):
