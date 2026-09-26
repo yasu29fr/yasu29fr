@@ -205,25 +205,36 @@ def 読む(c: dict) -> tuple[str, str]:
     except Exception as e:  # noqa: BLE001
         止まる(f"商品ページを開けませんでした（{ページ}・{e}）")
     品 = 本文だけ(生, 40_000)
+    print(f"商品ページ: {len(生):,}文字（本文 {len(品):,}文字）")
 
     # レビューのURLは数字のショップIDが要る。APIからは組み立てられないので商品ページから探す
+    番 = (c.get("itemCode") or "").split(":")[-1]
+    m_id = None
     m = re.search(r"review\.rakuten\.co\.jp/item/1/(\d+_\d+)", 生)
-    if not m:
-        店 = re.search(r"shopId[\"']?\s*[:=]\s*[\"']?(\d+)", 生)
-        番 = (c.get("itemCode") or "").split(":")[-1]
-        m_id = f"{店.group(1)}_{番}" if (店 and 番.isdigit()) else None
-    else:
+    if m:
         m_id = m.group(1)
+    else:
+        for pat in (r"[\"']?shopId[\"']?\s*[:=]\s*[\"']?(\d{4,8})", r"shop_?id[\"'=:\s]+(\d{4,8})",
+                    r"data-shop-id=[\"'](\d{4,8})", r"/(\d{4,8})_" + re.escape(番) if 番.isdigit() else r"$^"):
+            店 = re.search(pat, 生, re.I)
+            if 店 and 番.isdigit():
+                m_id = f"{店.group(1)}_{番}"
+                break
+    見せる(f"レビューの場所: {m_id or '見つからない'}（商品番号 {番}）")
     声 = ""
     if m_id:
         for 並び in ("sort6", "sort1"):
+            url = f"https://review.rakuten.co.jp/item/1/{m_id}/1.1/{並び}/"
             try:
-                声 = 本文だけ(取ってくる(f"https://review.rakuten.co.jp/item/1/{m_id}/1.1/{並び}/"), 30_000)
+                声 = 本文だけ(取ってくる(url), 30_000)
                 if 声:
+                    print(f"レビュー: {url} から {len(声):,}文字")
                     break
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                見せる(f"レビューが開けません: {url}（{str(e)[:80]}）")
                 continue
     if not 声:
+        # 商品ページの中にレビューの抜粋が載っていることがある。それを材料にする
         見せる("レビューページが読めませんでした。商品ページの中にあるレビューだけで進めます")
     return 品, 声
 
