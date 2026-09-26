@@ -407,6 +407,9 @@ def 予備で埋める() -> None:
     lines = queue_を読む()
     すでに = 入っているid(lines)
     空き = [(h, 枠のid(日, h)) for h in 枠 if 枠のid(日, h) not in すでに]
+    いま = datetime.now(JST)
+    空き = [(h, i) for h, i in 空き
+          if datetime(日.year, 日.month, 日.day, int(h[:2]), int(h[3:]), tzinfo=JST) > いま]
     if not 空き:
         print("美容の枠は全部埋まっています。予備は使いません。")
         return
@@ -443,6 +446,14 @@ def main() -> None:
     lines = queue_を読む()
     すでに = 入っているid(lines)
     空き = [(h, i) for h, i in zip(枠, ids) if i not in すでに]
+    # すでに時刻を過ぎた枠は作らない。作ると、次の投稿の回で即座に出てしまう。
+    # GitHub の定時実行は数時間遅れることがあるので、この見張りが要る（2026-09-26）。
+    いま = datetime.now(JST)
+    過ぎた = [h for h, _ in 空き
+            if datetime(日.year, 日.month, 日.day, int(h[:2]), int(h[3:]), tzinfo=JST) <= いま]
+    if 過ぎた:
+        見せる(f"すでに時刻を過ぎているため作らない枠: {'、'.join(過ぎた)}")
+        空き = [(h, i) for h, i in 空き if h not in 過ぎた]
     print(f"埋める日: {日:%Y-%m-%d} ／ 空いている枠: {[h for h, _ in 空き] or 'なし'}")
     if not 空き:
         print("美容の枠は全部埋まっています。何もしません。")
