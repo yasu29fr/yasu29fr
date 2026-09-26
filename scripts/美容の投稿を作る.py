@@ -210,9 +210,14 @@ def 読みながら聞く(api_key: str, model: str, prompt: str, max_tokens: int
     web_fetch は途中で pause_turn を返すことがあるので、続きを頼んで回す。
     """
     messages = [{"role": "user", "content": prompt}]
+    # web_fetch は会話に出てきたURLしか開けない。商品ページにレビューへのリンクが
+    # 無い店がある（2026-09-26、美顔器とまつげ美容液で決め手0件）ので、
+    # web_search でレビューページのURLを見つけられるようにする。
     tools = [{"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 6,
               "allowed_domains": ["item.rakuten.co.jp", "review.rakuten.co.jp"],
-              "max_content_tokens": 40000}]
+              "max_content_tokens": 40000},
+             {"type": "web_search_20250305", "name": "web_search", "max_uses": 3,
+              "allowed_domains": ["review.rakuten.co.jp", "item.rakuten.co.jp"]}]
     data: dict = {}
     for 回 in range(5):
         body = json.dumps({"model": model, "max_tokens": max_tokens, "tools": tools,
@@ -258,12 +263,19 @@ def JSONを取る(text: str):
 
 def 事実を確かめる(api_key, model, c) -> dict:
     ページ = 素の商品ページ(c)
+    # 検索に使う短い名前（【】や＼／の飾りを落として先頭の数語）
+    短い名 = re.sub(r"[【＼\\][^】／/]*[】／/]", " ", str(c.get("名", "")))
+    短い名 = " ".join(短い名.split()[:4])
     prompt = f"""楽天の商品を調べます。web_fetch でページを開き、**書いてあることだけ**を抜き出してください。
 推測・補足・一般論は一切入れないでください。書いていないものは null にしてください。
 
 1. 商品ページを開く: {ページ}
 2. 商品ページの中にある「レビュー」へのリンク（review.rakuten.co.jp/item/1/…）を開く。
+   **リンクが見つからなければ、web_search で「{c.get('店','')} {短い名} レビュー」を
+   review.rakuten.co.jp に絞って探し、出てきたレビューページを開く。**
    並びが選べるなら「参考になった順」。★5と★1・★2を探して読む（2〜3ページまで）
+3. 区分は、商品ページの「区分」「医薬部外品」「化粧品」「全成分」の表記で判断する。
+   まつげ美容液・化粧水・美容液・シャンプーで「医薬部外品」の表記が無ければ「化粧品」
 
 # 商品名（楽天）
 {c.get('名')}
