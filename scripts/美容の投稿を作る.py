@@ -463,14 +463,16 @@ def main() -> None:
     if not 通った:
         止まる("見張りを通った投稿が1本もありません")
 
+    見せる(f"見張り：通った {len(通った)}本")
     if os.environ.get("DRY_RUN") == "1":
+        # 注記は1ステップ10件までしか残らないので、全文はファイルに書く（ワークフローがこれだけコミットする）
+        書 = [f"# 美容の下見 {日:%Y-%m-%d}（{決めた人}：番号{選.get('番号')}）", "",
+             f"- 商品：{事実.get('短い商品名')}（{事実.get('区分')}）", f"- 理由：{理由}", ""]
         for n, p in enumerate(通った, 1):
-            見せる(f"（下見）{n}. {p.get('誰')} ／ {p.get('悩み')}")
-            for 行 in p["本文"].splitlines():
-                見せる(f"    本文| {行}")
-            for 行 in p["返信"].replace("LINK", link).splitlines():
-                見せる(f"    返信| {行}")
-        print("DRY_RUN なので queue には入れません。")
+            書 += [f"## {n}. {p.get('誰')}", f"悩み：{p.get('悩み')}", "", "【本文】", "```", p["本文"].strip(), "```",
+                  "【返信】", "```", p["返信"].replace("LINK", link).strip(), "```", ""]
+        Path("neta/美容_下見.md").write_text("\n".join(書), encoding="utf-8")
+        print("DRY_RUN なので queue には入れません。neta/美容_下見.md に書きました。")
         return
 
     新 = []

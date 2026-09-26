@@ -49,6 +49,18 @@ jobs:
           USE_SPARE: "1"
         run: python "scripts/美容の投稿を作る.py"
 
+      - name: 下見をコミットする
+        if: ${{ always() && env.DRY_RUN }}
+        run: |
+          set -euo pipefail
+          [ -f "neta/美容_下見.md" ] || exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "neta/美容_下見.md"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "chore(美容): 下見"
+          git pull --rebase origin "${GITHUB_REF_NAME}" && git push
+
       - name: キューの形式を検証する
         if: ${{ always() && !env.DRY_RUN }}
         env:
