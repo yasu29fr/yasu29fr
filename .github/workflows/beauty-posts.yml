@@ -1,0 +1,71 @@
+name: 美容の投稿を作る
+
+# 運営事業部・yuアカウント。美容の投稿を5本作り、翌日（7時前なら当日）の
+# 07:00 / 13:00 / 20:00 / 22:00 に予約する。残り1本は予備に回す。
+#
+# 呼ばれ方:
+#   - 代表が候補から選んだとき … repository_dispatch（client_payload.pick / link）
+#   - 毎日 1:00 JST（= 16:00 UTC） … 代表の返信が無く枠が空いていれば、自動で選ぶ
+#     （2026-09-26 代表指示「返信をしなかった場合、自動で判断して進めて。期限は翌日1:00」）
+#   - 本番が失敗したら、2段目で予備を空き枠に入れる
+#
+# client_payload.dry_run: true で下見だけ（queue に入れない）。
+on:
+  repository_dispatch:
+    types: [beauty-posts]
+  schedule:
+    - cron: "0 16 * * *"
+
+# 投稿の実行・compose と重ならないよう、同じ枠で直列化する
+concurrency:
+  group: threads-post
+  cancel-in-progress: false
+
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      PICK: ${{ github.event.client_payload.pick }}
+      LINK: ${{ github.event.client_payload.link }}
+      TARGET_DATE: ${{ github.event.client_payload.target_date }}
+      DRY_RUN: ${{ github.event.client_payload.dry_run && '1' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 美容の投稿を作る
+        id: make
+        run: python "scripts/美容の投稿を作る.py"
+
+      - name: 失敗したら予備で埋める
+        if: ${{ failure() && steps.make.outcome == 'failure' }}
+        env:
+          USE_SPARE: "1"
+        run: python "scripts/美容の投稿を作る.py"
+
+      - name: キューの形式を検証する
+        if: ${{ always() && !env.DRY_RUN }}
+        env:
+          PYTHONPATH: src
+        run: python -m threads_bot validate
+
+      - name: コミットする
+        if: ${{ always() && !env.DRY_RUN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add posts/queue.jsonl "neta/美容_予備.jsonl" "neta/美容_決定ログ.jsonl"
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "chore(美容): 投稿を予約（$(TZ=Asia/Tokyo date +%F)）"
+          for i in 1 2 3 4; do
+            if git pull --rebase origin "${GITHUB_REF_NAME}" && git push; then exit 0; fi
+            sleep $((2 ** i))
+          done
+          exit 1
