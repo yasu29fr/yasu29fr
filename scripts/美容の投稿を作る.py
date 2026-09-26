@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-import html
+
 import json
 import os
 import re
@@ -187,59 +187,6 @@ def 素の商品ページ(c: dict) -> str:
 
 
 # ------------------------------------------------------------------
-# 商品ページとレビューを読む
-# ------------------------------------------------------------------
-def 本文だけ(h: str, 上限: int) -> str:
-    h = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", h)
-    h = re.sub(r"(?s)<[^>]+>", " ", h)
-    h = html.unescape(h)
-    h = re.sub(r"[ \t　]+", " ", h)
-    h = re.sub(r"\s*\n\s*", "\n", h)
-    return h.strip()[:上限]
-
-
-def 読む(c: dict) -> tuple[str, str]:
-    ページ = 素の商品ページ(c)
-    try:
-        生 = 取ってくる(ページ)
-    except Exception as e:  # noqa: BLE001
-        止まる(f"商品ページを開けませんでした（{ページ}・{e}）")
-    品 = 本文だけ(生, 40_000)
-    print(f"商品ページ: {len(生):,}文字（本文 {len(品):,}文字）")
-
-    # レビューのURLは数字のショップIDが要る。APIからは組み立てられないので商品ページから探す
-    番 = (c.get("itemCode") or "").split(":")[-1]
-    m_id = None
-    m = re.search(r"review\.rakuten\.co\.jp/item/1/(\d+_\d+)", 生)
-    if m:
-        m_id = m.group(1)
-    else:
-        for pat in (r"[\"']?shopId[\"']?\s*[:=]\s*[\"']?(\d{4,8})", r"shop_?id[\"'=:\s]+(\d{4,8})",
-                    r"data-shop-id=[\"'](\d{4,8})", r"/(\d{4,8})_" + re.escape(番) if 番.isdigit() else r"$^"):
-            店 = re.search(pat, 生, re.I)
-            if 店 and 番.isdigit():
-                m_id = f"{店.group(1)}_{番}"
-                break
-    見せる(f"レビューの場所: {m_id or '見つからない'}（商品番号 {番}）")
-    声 = ""
-    if m_id:
-        for 並び in ("sort6", "sort1"):
-            url = f"https://review.rakuten.co.jp/item/1/{m_id}/1.1/{並び}/"
-            try:
-                声 = 本文だけ(取ってくる(url), 30_000)
-                if 声:
-                    print(f"レビュー: {url} から {len(声):,}文字")
-                    break
-            except Exception as e:  # noqa: BLE001
-                見せる(f"レビューが開けません: {url}（{str(e)[:80]}）")
-                continue
-    if not 声:
-        # 商品ページの中にレビューの抜粋が載っていることがある。それを材料にする
-        見せる("レビューページが読めませんでした。商品ページの中にあるレビューだけで進めます")
-    return 品, 声
-
-
-# ------------------------------------------------------------------
 # Claude
 # ------------------------------------------------------------------
 def 聞く(api_key: str, model: str, prompt: str, max_tokens: int = 8000) -> str:
@@ -254,6 +201,38 @@ def 聞く(api_key: str, model: str, prompt: str, max_tokens: int = 8000) -> str
             data = json.loads(res.read().decode())
     except urllib.error.HTTPError as e:
         止まる(f"Anthropic API エラー ({e.code}): {e.read().decode(errors='replace')[:400]}")
+    return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+
+
+def 読みながら聞く(api_key: str, model: str, prompt: str, max_tokens: int = 8000) -> str:
+    """Anthropic の web_fetch を使って、Claude 自身にページを開かせる。
+
+    GitHub の実行環境から楽天の商品ページを直接取ると、中身の無いページが返る
+    （2026-09-26、区分も決め手も取れなかった）。Claude の web_fetch なら読める。
+    web_fetch は途中で pause_turn を返すことがあるので、続きを頼んで回す。
+    """
+    messages = [{"role": "user", "content": prompt}]
+    tools = [{"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 6,
+              "allowed_domains": ["item.rakuten.co.jp", "review.rakuten.co.jp"],
+              "max_content_tokens": 40000}]
+    data: dict = {}
+    for 回 in range(5):
+        body = json.dumps({"model": model, "max_tokens": max_tokens, "tools": tools,
+                           "messages": messages}).encode()
+        req = urllib.request.Request(API, data=body, method="POST")
+        req.add_header("x-api-key", api_key)
+        req.add_header("anthropic-version", "2023-06-01")
+        req.add_header("content-type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=300) as res:
+                data = json.loads(res.read().decode())
+        except urllib.error.HTTPError as e:
+            止まる(f"Anthropic API エラー ({e.code}): {e.read().decode(errors='replace')[:400]}")
+        使った = sum(1 for b in data.get("content", []) if b.get("type") == "server_tool_use")
+        print(f"web_fetch: stop_reason={data.get('stop_reason')} ／ 開いたページ {使った}（{回 + 1}回目）")
+        if data.get("stop_reason") != "pause_turn":
+            break
+        messages.append({"role": "assistant", "content": data["content"]})
     return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
 
 
@@ -279,20 +258,19 @@ def JSONを取る(text: str):
     return json.loads(素)
 
 
-def 事実を確かめる(api_key, model, c, 品, 声) -> dict:
-    prompt = f"""楽天の商品ページとレビューページの文字を渡します。**書いてあることだけ**を抜き出してください。
+def 事実を確かめる(api_key, model, c) -> dict:
+    ページ = 素の商品ページ(c)
+    prompt = f"""楽天の商品を調べます。web_fetch でページを開き、**書いてあることだけ**を抜き出してください。
 推測・補足・一般論は一切入れないでください。書いていないものは null にしてください。
+
+1. 商品ページを開く: {ページ}
+2. 商品ページの中にある「レビュー」へのリンク（review.rakuten.co.jp/item/1/…）を開く。
+   並びが選べるなら「参考になった順」。★5と★1・★2を探して読む（2〜3ページまで）
 
 # 商品名（楽天）
 {c.get('名')}
 
-# 商品ページの文字
-{品}
-
-# レビューページの文字
-{声 or '（読めませんでした）'}
-
-# 返す形（JSONだけ）
+# 返す形（JSONだけ。前置き不要）
 ```json
 {{
   "短い商品名": "ブランド名＋商品の種類（例：レステモ 薬用美白ゲルクリーム）",
@@ -304,15 +282,17 @@ def 事実を確かめる(api_key, model, c, 品, 声) -> dict:
   "使い方": "ページの文言をそのまま短く",
   "役割": ["オールインワンなら何役か。ページにあるものだけ"],
   "主な成分": ["配合目的がページに書いてあれば『成分名（目的）』の形で"],
+  "仕様": ["美容機器のとき：温度・モード・重さ・充電など、ページにある仕様"],
   "詰め替え": "あり / なし / 不明",
   "レビュー件数": 数字か null,
   "レビュー平均": 数字か null,
   "星5の決め手": ["★5レビューに書いてある『買った決め手』。1件1行・本文にあることだけ・最大7件"],
   "星1の理由": ["★1・★2に書いてある『買わない理由』。見つからなければ空"],
-  "使ってはいけない声": ["レビューにあるが、効能を言いすぎていて投稿に使えないもの（シミが薄くなった等）"]
+  "使ってはいけない声": ["レビューにあるが、効能を言いすぎていて投稿に使えないもの（シミが薄くなった等）"],
+  "読めたページ": ["実際に開けたURL"]
 }}
 ```"""
-    return JSONを取る(聞く(api_key, model, prompt))
+    return JSONを取る(読みながら聞く(api_key, model, prompt))
 
 
 def 投稿を書かせる(api_key, model, 事実, 前回の失敗=None) -> list[dict]:
@@ -462,9 +442,9 @@ def main() -> None:
     見せる(f"理由：{理由}")
 
     model = モデル(api_key)
-    品, 声 = 読む(選)
-    事実 = 事実を確かめる(api_key, model, 選, 品, 声)
+    事実 = 事実を確かめる(api_key, model, 選)
     見せる(f"区分：{事実.get('区分')} ／ 決め手 {len(事実.get('星5の決め手') or [])}件 ／ 星1 {len(事実.get('星1の理由') or [])}件")
+    見せる(f"読めたページ：{' ／ '.join(事実.get('読めたページ') or []) or 'なし'}")
     if not (事実.get("星5の決め手")):
         止まる("レビューから決め手が1つも取れませんでした。材料が無いまま書かせない")
 
