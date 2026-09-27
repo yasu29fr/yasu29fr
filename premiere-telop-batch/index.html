@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>テロップ一括調整</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <button id="refresh" class="primary">選択を読み込む</button>
+    <div id="status" class="muted">タイムラインでテロップを複数選択してください</div>
+  </header>
+
+  <section>
+    <label class="row">
+      <span>対象</span>
+      <select id="target">
+        <option value="auto">自動（テキストレイヤー優先）</option>
+        <option value="text">テキストレイヤーのトランスフォーム</option>
+        <option value="motion">クリップのモーション</option>
+      </select>
+    </label>
+    <div id="ref" class="muted small"></div>
+  </section>
+
+  <section>
+    <h2>スケール</h2>
+    <div class="row">
+      <input id="scaleValue" type="number" value="100" step="1">
+      <span class="unit">%</span>
+    </div>
+    <div class="grid3">
+      <button data-scale="set" title="全クリップのスケールをこの値にする">この値にする</button>
+      <button data-scale="mul" title="今のスケールに対して ○% 倍（例: 90 で 1 割縮小）">今の値×%</button>
+      <button data-scale="add" title="今のスケールに加算（マイナス可）">今の値＋</button>
+    </div>
+    <button data-scale="ref" class="wide">先頭クリップのスケールに揃える</button>
+  </section>
+
+  <section>
+    <h2>整列（フレーム基準）</h2>
+    <div class="row">
+      <span>余白</span>
+      <input id="margin" type="number" value="0" step="1">
+      <span class="unit">px</span>
+    </div>
+    <div class="grid3">
+      <button data-align="left">左</button>
+      <button data-align="hcenter">左右中央</button>
+      <button data-align="right">右</button>
+      <button data-align="top">上</button>
+      <button data-align="vcenter">上下中央</button>
+      <button data-align="bottom">下</button>
+    </div>
+    <p class="muted small">※ アンカーポイントの位置をフレームの端・中央に合わせます。</p>
+  </section>
+
+  <section>
+    <h2>整列（先頭クリップ基準）</h2>
+    <div class="grid3">
+      <button data-refpos="x">X を揃える</button>
+      <button data-refpos="y">Y を揃える</button>
+      <button data-refpos="xy">XY 両方</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>位置</h2>
+    <div class="row">
+      <span>X</span><input id="posX" type="number" value="0" step="1">
+      <span>Y</span><input id="posY" type="number" value="0" step="1">
+    </div>
+    <div class="grid2">
+      <button data-pos="set" title="X・Y をこの座標(px)にする">この座標にする</button>
+      <button data-pos="offset" title="今の位置から X・Y px 動かす">相対移動</button>
+    </div>
+    <div class="row small">
+      <label><input type="radio" name="axis" value="xy" checked> XY</label>
+      <label><input type="radio" name="axis" value="x"> X のみ</label>
+      <label><input type="radio" name="axis" value="y"> Y のみ</label>
+    </div>
+  </section>
+
+  <section>
+    <h2>先頭クリップの値をまとめてコピー</h2>
+    <div class="row small wrap">
+      <label><input type="checkbox" name="match" value="position" checked> 位置</label>
+      <label><input type="checkbox" name="match" value="scale" checked> スケール</label>
+      <label><input type="checkbox" name="match" value="scaleWidth"> 幅スケール</label>
+      <label><input type="checkbox" name="match" value="rotation"> 回転</label>
+      <label><input type="checkbox" name="match" value="anchor"> アンカー</label>
+    </div>
+    <button id="match" class="wide">コピーを実行</button>
+  </section>
+
+  <section>
+    <button id="inspect" class="wide subtle">調査: 先頭クリップのエフェクト構成を表示</button>
+    <pre id="log"></pre>
+  </section>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+:root {
+  --bg: #232323;
+  --panel: #2c2c2c;
+  --line: #3a3a3a;
+  --text: #d6d6d6;
+  --muted: #8f8f8f;
+  --accent: #2d8ceb;
+  --btn: #3b3b3b;
+  --btn-hover: #474747;
+  --error: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.4 "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+
+header { margin-bottom: 8px; }
+
+section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+h2 { font-size: 12px; margin: 0 0 6px; font-weight: 600; }
+
+.row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.row.wrap { flex-wrap: wrap; }
+.row > select, .row > input[type=number] { flex: 1; min-width: 0; }
+
+.grid2, .grid3 { display: grid; gap: 4px; margin-bottom: 4px; }
+.grid2 { grid-template-columns: 1fr 1fr; }
+.grid3 { grid-template-columns: 1fr 1fr 1fr; }
+
+input[type=number], select {
+  background: #1b1b1b;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 3px 5px;
+  font: inherit;
+}
+
+button {
+  background: var(--btn);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 5px 4px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { background: var(--btn-hover); }
+button:active { transform: translateY(1px); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; width: 100%; }
+button.wide { width: 100%; }
+button.subtle { color: var(--muted); }
+button:disabled { opacity: .5; cursor: default; }
+
+.unit { color: var(--muted); }
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+#status { margin-top: 6px; }
+#status.error, .error { color: var(--error); }
+
+pre#log {
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow: auto;
+  margin: 6px 0 0;
+  font: 11px/1.35 Menlo, Consolas, monospace;
+  color: var(--muted);
+}
+pre#log:empty { display: none; }
