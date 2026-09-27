@@ -13,11 +13,6 @@ name: 美容の投稿を作る
 on:
   repository_dispatch:
     types: [beauty-posts]
-  # 代表が PC なしで選べる入口（2026-09-27）。
-  # 19:20 の提案にある「この商品に決める」リンクから Issue を立てると、タイトルの
-  # 「美容 <番号> <短縮リンク>」を読んでここが動く。代表（リポジトリの持ち主）の Issue だけ受け付ける。
-  issues:
-    types: [opened]
   # GitHub の定時実行は、このアカウントでは2〜5時間遅れて走る（2026-09-26 実測）。
   # ここは「代表の返信が無かったときの最後の砦」なので、
   # 早い時刻から何度も仕掛けて、どれかが 07:00 の投稿に間に合うようにする。
@@ -35,15 +30,14 @@ concurrency:
 
 jobs:
   make:
-    # Issue から来たときは、持ち主が立てた「美容 …」の Issue だけ
-    if: ${{ github.event_name != 'issues' || (github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, '美容')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: write
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      PICK: ${{ github.event.client_payload.pick }}
+      LINK: ${{ github.event.client_payload.link }}
       TARGET_DATE: ${{ github.event.client_payload.target_date }}
       DRY_RUN: ${{ github.event.client_payload.dry_run && '1' || '' }}
     steps:
@@ -52,30 +46,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Issue のタイトルから番号とリンクを読む
-        id: issue
-        if: ${{ github.event_name == 'issues' }}
-        env:
-          TITLE: ${{ github.event.issue.title }}
-        run: |
-          set -euo pipefail
-          # 例：「美容 4 https://a.r10.to/hPsLkQ」（全角数字・全角スペースも許す）
-          T=$(printf '%s' "$TITLE" | python3 -c "import sys,unicodedata;print(unicodedata.normalize('NFKC',sys.stdin.read()))")
-          PICK=$(printf '%s' "$T" | sed -nE 's/^美容[[:space:]]*([0-9]+).*/\1/p')
-          LINK=$(printf '%s' "$T" | grep -oE 'https://a\.r10\.to/[A-Za-z0-9]{5,8}' | head -1 || true)
-          if [ -z "$PICK" ] || [ -z "$LINK" ]; then
-            echo "::error::タイトルから番号と短縮リンクが読めません：$TITLE"
-            exit 1
-          fi
-          echo "pick=$PICK" >> "$GITHUB_OUTPUT"
-          echo "link=$LINK" >> "$GITHUB_OUTPUT"
-          echo "::warning::代表の選択：番号 $PICK ／ $LINK"
-
       - name: 美容の投稿を作る
         id: make
-        env:
-          PICK: ${{ steps.issue.outputs.pick || github.event.client_payload.pick }}
-          LINK: ${{ steps.issue.outputs.link || github.event.client_payload.link }}
         run: python "scripts/美容の投稿を作る.py"
 
       - name: 失敗したら予備で埋める
@@ -116,36 +88,3 @@ jobs:
             sleep $((2 ** i))
           done
           exit 1
-
-      - name: Issue に結果を書いて閉じる
-        if: ${{ always() && github.event_name == 'issues' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NUM: ${{ github.event.issue.number }}
-          OUTCOME: ${{ steps.make.outcome }}
-        run: |
-          set -uo pipefail
-          D=$(TZ=Asia/Tokyo date -d "$( [ "$(TZ=Asia/Tokyo date +%H)" -lt 7 ] && echo today || echo tomorrow )" +%m%d)
-          if [ "$OUTCOME" = "success" ]; then
-            BODY=$(python3 - "$D" <<'PY'
-          import json, sys
-          d = sys.argv[1]
-          rows = []
-          for l in open("posts/queue.jsonl", encoding="utf-8"):
-              l = l.strip()
-              if l and not l.startswith("#"):
-                  e = json.loads(l)
-                  if str(e.get("id", "")).startswith(f"p-beauty-{d}-"):
-                      rows.append(e)
-          out = [f"受け付けました。{d[:2]}/{d[2:]} の美容 {len(rows)} 本を予約しました。", ""]
-          for e in rows:
-              out += [f"### {e['scheduled_at'][11:16]}", e["text"], "", "（返信）", e["thread"][0], ""]
-          print("\n".join(out))
-          PY
-          )
-          else
-            BODY="作れませんでした（$OUTCOME）。Actions の結果を確認してください。${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          fi
-          gh issue comment "$NUM" --repo "${{ github.repository }}" --body "$BODY"
-          gh issue close "$NUM" --repo "${{ github.repository }}"
-
