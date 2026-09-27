@@ -305,108 +305,6 @@ def 事実を確かめる(api_key, model, c) -> dict:
     return JSONを取る(読みながら聞く(api_key, model, prompt))
 
 
-def 伸びた書き出し() -> str:
-    """数字の担当（scripts/アフィリの成績.py）が残した、表示が多かった／少なかった美容の投稿。
-    サイクルの⑦改善：伸びた書き出しの形を次の投稿に返す。中身（商品・効能）は写させない。"""
-    p = Path("insights/アフィリの学び.json")
-    if not p.exists():
-        return ""
-    try:
-        学 = json.loads(p.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return ""
-    伸 = 学.get("美容_伸びた") or []
-    沈 = 学.get("美容_伸びなかった") or []
-    if not 伸:
-        return ""
-    行 = ["# 前に表示が多かった投稿（書き出しの形・長さ・温度だけ参考にする。商品や効能は写さない）"]
-    for x in 伸:
-        行.append(f"- 表示 {x.get('表示'):,}：" + (x.get("本文") or "").replace(chr(10), " / ")[:160])
-    for x in 沈:
-        行.append(f"- （表示が少なかった。この書き出しの形は避ける）表示 {x.get('表示'):,}："
-                 + (x.get("本文") or "").replace(chr(10), " / ")[:80])
-    return chr(10).join(行) + chr(10)
-
-
-def 最近の書き出し(日: datetime, 日数: int = 7) -> set[str]:
-    """queue にある直近の美容の投稿の1行目。同じ書き出しを続けて出さないため。"""
-    出 = set()
-    for l in queue_を読む():
-        s = l.strip()
-        if not s or s.startswith("#"):
-            continue
-        try:
-            e = json.loads(s)
-        except json.JSONDecodeError:
-            continue
-        if not str(e.get("id", "")).startswith("p-beauty-"):
-            continue
-        try:
-            d = datetime.fromisoformat(e["scheduled_at"])
-        except (KeyError, ValueError):
-            continue
-        if 0 < (日 - d.replace(hour=0, minute=0)).days <= 日数 or d.date() == 日.date():
-            出.add(書き出しの鍵(e.get("text", "")))
-    return 出
-
-
-def 書き出しの鍵(本文: str) -> str:
-    行 = (本文.strip().splitlines() or [""])[0]
-    return re.sub(r"[\s、。，．！？!?「」]", "", 行)[:14]
-
-
-def 照らし合わせる(api_key, model, 事実, 投稿: list[dict]) -> list[dict]:
-    """④ 精度チェック（2026-09-27 代表指示「④はお願いします。承認プロセスは変えません」）。
-
-    見張る() は言葉の見張り（禁止語・形）。こちらは中身の照合：
-    書いてあることが、確かめた事実とレビューに本当にあるかを、書いた人とは別の目で1本ずつ見る。
-    はねた投稿は使わない。代表の承認の流れ（選ぶ→1:00で自動）はそのまま。
-    """
-    if not 投稿:
-        return []
-    prompt = f"""あなたは運営事業部の「チェック担当」です。書いた人とは別の目で、下の投稿を1本ずつ照合してください。
-甘く通さないこと。ただし、決まりに無い好みで落とさないこと。
-
-# 確かめた事実（これが唯一の根拠）
-```json
-{json.dumps(事実, ensure_ascii=False, indent=1)}
-```
-
-# 見ること（1つでも当てはまれば不合格）
-1. 商品について書いてあること（成分・容量・使い方・何役か・レビュー件数・★・効能の文言）が、上の事実に無い
-2. 「レビューに〜という声」の中身が、「星5の決め手」「星1の理由」のどれにも当たらない。または「使ってはいけない声」を使っている
-3. 1投稿目の悩みが、決め手・理由のどれにもつながっていない（レビューに無い悩みを作っている）
-4. 効能を言い換えている／広げている（医薬部外品は「承認された効能」の文言どおりか。化粧品は効能を書いていないか。美容機器は肌や体への効果を書いていないか）
-5. 1行目だけ読んで、誰に向けた話か分からない
-6. 事実として言い切っているが、ページやレビューからは言えないこと（「サロン専売」「日本製」などの断定も含む）
-
-# 投稿
-```json
-{json.dumps([{"番号": i, "誰": p.get("誰"), "本文": p.get("本文"), "返信": p.get("返信")} for i, p in enumerate(投稿)], ensure_ascii=False, indent=1)}
-```
-
-# 返す形（JSONだけ）
-```json
-[{{"番号": 0, "合格": true, "理由": "不合格のときだけ、どの文がどの項目に当たるかを短く"}}, …]
-```"""
-    try:
-        結果 = JSONを取る(聞く(api_key, model, prompt, 4000))
-    except (json.JSONDecodeError, ValueError) as e:
-        見せる(f"④ 精度チェックの返事が読めませんでした（{e}）。念のため全部はねます")
-        return [dict(p, _チェック="返事が読めない") for p in 投稿]
-    判定 = {int(x.get("番号", -1)): x for x in 結果 if isinstance(x, dict)}
-    出 = []
-    for i, p in enumerate(投稿):
-        x = 判定.get(i)
-        if not x:
-            出.append(dict(p, _チェック="判定が無い"))
-        elif not x.get("合格"):
-            出.append(dict(p, _チェック=str(x.get("理由") or "不合格")))
-        else:
-            出.append(dict(p, _チェック=""))
-    return 出
-
-
 def 投稿を書かせる(api_key, model, 事実, 前回の失敗=None) -> list[dict]:
     医薬 = 事実.get("区分") == "医薬部外品"
     prompt = f"""あなたは運営事業部の「切り口担当」と「投稿ライター」です。
@@ -420,7 +318,6 @@ def 投稿を書かせる(api_key, model, 事実, 前回の失敗=None) -> list[
 # 見本（代表が確認した形。商品はちがうが、この長さ・言い回し・温度に合わせる）
 {Path("scripts/美容_見本.txt").read_text(encoding="utf-8") if Path("scripts/美容_見本.txt").exists() else ""}
 
-{伸びた書き出し()}
 # 投稿の形（成分表型）
 - 【本文】（1投稿目）：その人の悩みから始める。役に立つ短い表や手順を置いてもよい。
   最後は必ず「それは、「」で切る（次の投稿で商品名を言う）
@@ -500,22 +397,6 @@ def 見張る(p: dict, 事実: dict) -> list[str]:
 
 
 # ------------------------------------------------------------------
-def 前の日の美容の注記(日: datetime) -> list[str]:
-    前 = (日 - timedelta(days=1)).strftime("%Y-%m-%d")
-    出 = []
-    for l in queue_を読む():
-        t = l.strip()
-        if not t or t.startswith("#"):
-            continue
-        try:
-            e = json.loads(t)
-        except json.JSONDecodeError:
-            continue
-        if str(e.get("id", "")).startswith("p-beauty-") and str(e.get("scheduled_at", "")).startswith(前):
-            出.append(e.get("note", ""))
-    return 出
-
-
 def 予備で埋める() -> None:
     """本番が失敗したときの最後の手。予備の投稿を古い順に空き枠へ入れる。
 
@@ -536,25 +417,7 @@ def 予備で埋める() -> None:
         見せる(f"予備がありません。{日:%m/%d} の美容 {len(空き)}枠は空のままです")
         return
     予備 = [json.loads(l) for l in 予備の置き場.read_text(encoding="utf-8").splitlines() if l.strip()]
-    # 予備の決まり（2026-09-27）
-    #  - 前の日と同じ商品は使わない。予備が決まりを素通りして、レステモが4本続いた（9/26〜27）
-    #  - 作ってから14日を過ぎた予備は捨てる（在庫・レビューが変わっている）
-    #  - ④の照合を通っていない予備（9/27 より前に作ったもの）は使わない
-    前の日 = (日 - timedelta(days=1)).strftime("%Y-%m-%d")
-    昨日の商品 = {x.get("商品") for x in ログを読む() if x.get("埋めた日") == 前の日}
-    昨日の商品 |= {e.split("／")[1] for e in 前の日の美容の注記(日) if len(e.split("／")) > 1}
-    使える, 古い = [], []
-    for x in 予備:
-        if (日 - datetime.strptime(x.get("作った日", "2000-01-01"), "%Y-%m-%d").replace(tzinfo=JST)).days > 同じ商品を空ける日数:
-            古い.append(x)
-        elif x.get("商品") in 昨日の商品:
-            見せる(f"予備を飛ばす：{x.get('商品')}（前の日と同じ商品）")
-        elif not x.get("④照合済み"):
-            見せる(f"予備を飛ばす：{x.get('商品')}（④の照合を通っていない）")
-        else:
-            使える.append(x)
-    使う = 使える[:len(空き)]
-    残す = [x for x in 予備 if x not in 使う and x not in 古い]
+    使う, 残す = 予備[:len(空き)], 予備[len(空き):]
     if not 使う:
         見せる(f"予備が0件です。{日:%m/%d} の美容 {len(空き)}枠は空のままです")
         return
@@ -568,13 +431,6 @@ def 予備で埋める() -> None:
         return
     queue_に足す(新)
     予備の置き場.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in 残す), encoding="utf-8")
-    # 予備で埋めた日も決定ログに残す。次の日の「前の日と同じ商品」の見張りに使う
-    with ログの置き場.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({
-            "決めた日時": datetime.now(JST).isoformat(timespec="minutes"), "埋めた日": f"{日:%Y-%m-%d}",
-            "決めた人": "予備", "商品": 使う[0].get("商品"), "理由": "本番が失敗したので予備で埋めた",
-            "予約": [x["scheduled_at"][11:16] for x in 新],
-        }, ensure_ascii=False) + "\n")
     for x in 新:
         見せる(f"予備で予約：{x['scheduled_at'][11:16]} … {x['note']}")
     if len(新) < len(空き):
@@ -641,42 +497,24 @@ def main() -> None:
 
     通った: list[dict] = []
     失敗 = None
-    最近 = 最近の書き出し(日)
-    はねた数 = {"言葉": 0, "照合": 0, "書き出し": 0}
     for 回 in (1, 2):
-        言葉を通った = []
         for p in 投稿を書かせる(api_key, model, 事実, 失敗):
             ng = 見張る(p, 事実)
-            if 書き出しの鍵(p.get("本文", "")) in 最近:
-                ng.append("直近7日の美容の投稿と1行目が同じ")
-                はねた数["書き出し"] += 1
             if ng:
-                はねた数["言葉"] += 1
                 見せる(f"はねた：{p.get('誰','?')} … {' ／ '.join(ng)}")
                 失敗 = (失敗 or "") + f"\n- {p.get('誰','?')}: {' ／ '.join(ng)}"
-            elif all(p.get("誰") != q.get("誰") for q in 通った + 言葉を通った):
-                言葉を通った.append(p)
-        # ④ 精度チェック：言葉の見張りを通ったものだけ、中身を照合する
-        for p in 照らし合わせる(api_key, model, 事実, 言葉を通った):
-            理由 = p.pop("_チェック")
-            if 理由:
-                はねた数["照合"] += 1
-                見せる(f"④ 照合ではねた：{p.get('誰','?')} … {理由}")
-                失敗 = (失敗 or "") + f"\n- {p.get('誰','?')}: 事実・レビューと照合して合わなかった（{理由}）"
-            else:
+            elif all(p.get("誰") != q.get("誰") for q in 通った):
                 通った.append(p)
-                最近.add(書き出しの鍵(p.get("本文", "")))
         if len(通った) >= len(空き) + 1 or (回 == 2):
             break
     if not 通った:
         止まる("見張りを通った投稿が1本もありません")
 
-    見せる(f"見張り：通った {len(通った)}本（はねた：言葉 {はねた数['言葉']}・④照合 {はねた数['照合']}、うち書き出しの重なり {はねた数['書き出し']}）")
+    見せる(f"見張り：通った {len(通った)}本")
     if os.environ.get("DRY_RUN") == "1":
         # 注記は1ステップ10件までしか残らないので、全文はファイルに書く（ワークフローがこれだけコミットする）
         書 = [f"# 美容の下見 {日:%Y-%m-%d}（{決めた人}：番号{選.get('番号')}）", "",
-             f"- 商品：{事実.get('短い商品名')}（{事実.get('区分')}）", f"- 理由：{理由}",
-             f"- ④ 精度チェック：通った {len(通った)}本／はねた 言葉 {はねた数['言葉']}・照合 {はねた数['照合']}", ""]
+             f"- 商品：{事実.get('短い商品名')}（{事実.get('区分')}）", f"- 理由：{理由}", ""]
         for n, p in enumerate(通った, 1):
             書 += [f"## {n}. {p.get('誰')}", f"悩み：{p.get('悩み')}", "", "【本文】", "```", p["本文"].strip(), "```",
                   "【返信】", "```", p["返信"].replace("LINK", link).strip(), "```", ""]
@@ -704,7 +542,7 @@ def main() -> None:
                 f.write(json.dumps({
                     "作った日": datetime.now(JST).strftime("%Y-%m-%d"), "商品": 事実.get("短い商品名"),
                     "本文": p["本文"].strip(), "返信": p["返信"].replace("LINK", link).strip(),
-                    "切り口": p.get("誰"), "④照合済み": True,
+                    "切り口": p.get("誰"),
                 }, ensure_ascii=False) + "\n")
     with ログの置き場.open("a", encoding="utf-8") as f:
         f.write(json.dumps({
@@ -712,7 +550,6 @@ def main() -> None:
             "決めた人": 決めた人, "番号": 選.get("番号"), "itemCode": 選.get("itemCode"),
             "商品": 事実.get("短い商品名"), "区分": 事実.get("区分"), "理由": 理由, "リンク": link,
             "予約": [x["scheduled_at"][11:16] for x in 新], "予備": len(予備),
-            "④はねた": はねた数,
         }, ensure_ascii=False) + "\n")
     if len(新) < len(空き):
         見せる(f"※ {len(空き)}枠のうち {len(新)}枠しか埋まりませんでした")

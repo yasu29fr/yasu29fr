@@ -47,6 +47,14 @@ jobs:
       - name: 数字を取り、判定し、指示を更新する
         run: python scripts/review.py
 
+      # 運営事業部・数字の担当（サイクルの⑥分析・⑦改善）。2026-09-27 追加。
+      # 3アカウントの表示回数と、代表が伝えたクリック合計から、アフィリ枠の成績を出す。
+      # ここが失敗しても日次レビューは止めない。
+      - name: アフィリエイト枠の成績を出す
+        if: env.DRY_RUN != 'true'
+        continue-on-error: true
+        run: python "scripts/アフィリの成績.py"
+
       - name: 検証結果をコミットする
         if: env.DRY_RUN != 'true'
         run: |
