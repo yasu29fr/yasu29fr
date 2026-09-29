@@ -49,6 +49,17 @@ jobs:
       - name: 翌日ぶんの 3 本を作る
         run: python scripts/compose.py
 
+      # 楽天トラベルの40%OFF以上のクーポンがあれば、明日の 19:00 に1本だけ紹介を足す
+      # （クーポンは x-yu__fukui-bot が週1回集める。2026-09-30 代表指示）
+      - name: 大きいクーポンの紹介を足す
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          COUPON_HOUR: "19"
+          COUPON_STYLE: "yu"
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python "scripts/クーポンの投稿.py"
+
       - name: キューの形式を検証する
         env:
           PYTHONPATH: src
