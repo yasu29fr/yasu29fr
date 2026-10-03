@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 
 JST = ZoneInfo("Asia/Tokyo")
 QUEUE = Path("posts/queue.jsonl")
-元 = ("https://api.github.com/repos/yasu29fr/x-yu__fukui-bot/contents/neta/"
+元 = ("https://api.github.com/repos/yu-fukui/x-yu__fukui-bot/contents/neta/"
       "%E5%AE%BF_%E5%A4%A7%E3%81%8D%E3%81%84%E3%82%AF%E3%83%BC%E3%83%9D%E3%83%B3.jsonl")
 印 = "大きいクーポン："
 
