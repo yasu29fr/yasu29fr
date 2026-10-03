@@ -24,7 +24,7 @@
 
 ## 1. Web アプリで予約する
 
-**https://yasu29fr.github.io/yasu29fr/**
+**https://yu-fukui.github.io/threads_yu-fukui/**
 
 本文を書いて日時を選び、「キューに入れる」を押すと `posts/queue.jsonl` が更新されます。
 スマホからも使えます。できることは次のとおりです。
@@ -47,7 +47,7 @@
 
 | 項目 | 設定 |
 | --- | --- |
-| Repository access | Only select repositories → `yasu29fr/yasu29fr` |
+| Repository access | Only select repositories → `yu-fukui/threads_yu-fukui` |
 | Permissions → Repository → **Contents** | **Read and write** |
 
 権限は Contents だけで足ります。
@@ -228,7 +228,7 @@ Google ドキュメントの「ネタ帳」に書き足されます。投稿を�
 **1. 起動用のトークンを作る**
 
 [Fine-grained token を作成](https://github.com/settings/personal-access-tokens/new)し、
-`yasu29fr/yasu29fr` だけに絞って **Contents: Read and write** を付けます
+`yu-fukui/threads_yu-fukui` だけに絞って **Contents: Read and write** を付けます
 （`repository_dispatch` はこの権限で叩けます）。画面用とは別のトークンにしてください。
 
 **2. cron サービスに 2 つのジョブを登録する**
@@ -245,7 +245,7 @@ Google ドキュメントの「ネタ帳」に書き足されます。投稿を�
 設定:
 
 ```
-URL    : https://api.github.com/repos/yasu29fr/yasu29fr/dispatches
+URL    : https://api.github.com/repos/yu-fukui/threads_yu-fukui/dispatches
 Method : POST
 Headers: Accept: application/vnd.github+json
          Authorization: Bearer <上で作ったトークン>
@@ -257,7 +257,7 @@ Body   : {"event_type": "threads-tick"}
 動作確認は手元からでもできます。
 
 ```bash
-curl -X POST https://api.github.com/repos/yasu29fr/yasu29fr/dispatches \
+curl -X POST https://api.github.com/repos/yu-fukui/threads_yu-fukui/dispatches \
   -H "Accept: application/vnd.github+json" \
   -H "Authorization: Bearer <トークン>" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -397,7 +397,7 @@ push と PR で同じテストが「テスト」ワークフローとして走�
 
 ## 9. 他の人が同じものを作れるようにする
 
-配布用の一式は、別の非公開リポジトリ **`yasu29fr/threads-bot-kit`** に移しました。
+配布用の一式は、別の非公開リポジトリ **`yu-fukui/threads-bot-kit`** に移しました。
 3 段階に分けてあり、第 1 段階（ブラウザから予約 → 自動投稿）だけで単体で完結します。
 
 AI にコードを書かせず、完成品を ZIP で渡して「展開・検証・案内」だけをさせる作りに

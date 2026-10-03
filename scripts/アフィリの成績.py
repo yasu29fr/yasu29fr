@@ -30,9 +30,9 @@ from zoneinfo import ZoneInfo
 JST = ZoneInfo("Asia/Tokyo")
 アカウント = {
     # 名前: (リポジトリ, ブランチ)。3つとも公開リポジトリ
-    "yu": ("yasu29fr/yasu29fr", "claude/threads-auto-posting-uhiy6w"),
-    "福井": ("y-umeda-urala/threads", "main"),
-    "X": ("yasu29fr/x-yu__fukui-bot", "main"),
+    "yu": ("yu-fukui/threads_yu-fukui", "main"),
+    "福井": ("fukui-fukui/threads", "main"),
+    "X": ("yu-fukui/x-yu__fukui-bot", "main"),
 }
 クリックの置き場 = Path("neta/クリック.jsonl")
 成績の置き場 = Path("insights/アフィリの成績.md")

@@ -35,7 +35,7 @@ QUEUE_PATH = Path("posts/queue.jsonl")
 予備の置き場 = Path("neta/美容_予備.jsonl")
 ログの置き場 = Path("neta/美容_決定ログ.jsonl")
 候補のURL = (
-    "https://raw.githubusercontent.com/yasu29fr/x-yu__fukui-bot/main/neta/"
+    "https://raw.githubusercontent.com/yu-fukui/x-yu__fukui-bot/main/neta/"
     "%E7%BE%8E%E5%AE%B9%E5%80%99%E8%A3%9C.jsonl"
 )
 API = "https://api.anthropic.com/v1/messages"
